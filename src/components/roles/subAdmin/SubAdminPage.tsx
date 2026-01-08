@@ -1,49 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
-import '../globals.css';
-import { Auction as SharedAuction, Item as SharedItem, Lot as SharedLot } from '../../types/auction';
-import { useTheme } from '../../hooks/useTheme';
-import { AppHeader } from '../../components/AppHeader';
-import { AppFooter } from '../../components/AppFooter';
-import { AppSidebar } from '../../components/AppSidebar';
-
-// Map shared types to relaxed shapes for this page
-type Auction = Partial<Omit<SharedAuction, 'id'>> & {
-  id: string | number;
-  name?: string;
-  description?: string;
-  startDate?: string;
-  endDate?: string;
-  createdAt?: string;
-  lots?: Lot[];
-  [k: string]: any;
-};
-
-type Lot = Partial<Omit<SharedLot, 'id'>> & {
-  id: number;
-  name?: string;
-  description?: string;
-  items?: AuctionItem[];
-  lotName?: string;
-  lotType?: 'expensive' | 'general';
-  itemCount?: number;
-  basePrice?: number;
-  assignedAuction?: string;
-  [k: string]: any;
-};
-
-type AuctionItem = Partial<Omit<SharedItem, 'id'>> & {
-  id?: string;
-  items?: {
-    serialNumber: string;
-    category: string;
-    description: string;
-    condition: string;
-    make: string;
-  }[];
-  [k: string]: any;
-};
+import type { SubAdminAuction as Auction, SubAdminAuctionItem as AuctionItem, SubAdminLot as Lot } from '@/types/subAdmin';
+import { useTheme } from '@/hooks/useTheme';
+import { Header } from '@/components/layout/Header';
+import { Footer } from '@/components/layout/Footer';
+import { Sidebar } from '@/components/layout/Sidebar';
 
 // ==================== UTILITY BAR COMPONENT ====================
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -693,11 +655,11 @@ export default function SubAdminPage() {
       <UtilityBar />
 
       {/* Header */}
-      <AppHeader title="IIAP Lost & Found Auction System" rightText="Sub-Admin Dashboard" rightHref="/sub-admin" />
+      <Header title="IIAP Lost & Found Auction System" rightText="Sub-Admin Dashboard" rightHref="/sub-admin" />
 
       <main className="dashboard-container">
         {/* Sidebar */}
-        <AppSidebar
+        <Sidebar
           title="Sub-Admin Menu"
           items={[
             {
@@ -968,7 +930,7 @@ export default function SubAdminPage() {
         </section>
       </main>
 
-      <AppFooter />
+      <Footer />
 
       {/* ==================== MODALS ==================== */}
 

@@ -2,11 +2,13 @@ import React from 'react';
 
 export function AppHeader(props: {
   title: string;
-  rightText: string;
-  rightHref: string;
   logoSrc?: string;
+  rightHref?: string;
+  rightText?: string;
+  rightSlot?: React.ReactNode;
 }) {
-  const { title, rightText, rightHref, logoSrc = '/paa-logo.png' } = props;
+  const { title, logoSrc = '/paa-logo.png', rightHref, rightText, rightSlot } = props;
+
   return (
     <header className="main-header">
       <div className="header-content">
@@ -17,7 +19,7 @@ export function AppHeader(props: {
           </div>
         </div>
         <div className="utility-nav">
-          <a href={rightHref}>{rightText}</a>
+          {rightSlot ?? (rightHref && rightText ? <a href={rightHref}>{rightText}</a> : null)}
         </div>
       </div>
     </header>

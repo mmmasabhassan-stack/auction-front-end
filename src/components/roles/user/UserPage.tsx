@@ -1,62 +1,15 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Auction as SharedAuction } from '../../types/auction';
-import { useTheme } from '../../hooks/useTheme';
-
-type Auction = Partial<Omit<SharedAuction, 'id' | 'auctionName' | 'status' | 'lotsCount'>> & {
-  id: string;
-  name: string;
-  dateTime: string;
-  lots: number;
-  status: 'live' | 'scheduled' | 'ended';
-  [k: string]: any;
-};
-
-type Bid = {
-  id: string;
-  auction: string;
-  lot: string;
-  myBid: number;
-  highest: number;
-  status: 'winning' | 'outbid' | 'live' | 'won';
-};
-
-type Won = {
-  id: string;
-  auction: string;
-  lot: string;
-  winningBid: number;
-  status: 'payment' | 'pickup' | 'completed';
-};
-
-type Notification = {
-  id: string;
-  type: 'bid' | 'system' | 'win' | 'payment';
-  message: string;
-  lot?: string;
-  date: string;
-  status: 'read' | 'unread';
-};
+import type { UserAuction as Auction, UserBid as Bid, UserNotification as Notification, UserWon as Won } from '@/types/user';
+import { storage } from '@/services/storage';
+import { useTheme } from '@/hooks/useTheme';
+import { Header } from '@/components/layout/Header';
+import { Sidebar } from '@/components/layout/Sidebar';
 
 const PAGE_SIZE = 10;
 
-const storage = {
-  get<T>(key: string, fallback: T): T {
-    if (typeof window === 'undefined') return fallback;
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      return JSON.parse(raw) as T;
-    } catch {
-      return fallback;
-    }
-  },
-  set<T>(key: string, value: T) {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(key, JSON.stringify(value));
-  },
-};
+// uses shared `storage` service
 
 const Modal: React.FC<{
   open: boolean;
@@ -129,25 +82,25 @@ export default function UserDashboard() {
   // Load data
   useEffect(() => {
     setAuctions(
-      storage.get<Auction[]>('user_auctions', [
+      storage.getJSON<Auction[]>('user_auctions', [
         { id: 'A-001', name: 'Costly Items Auction Q1 2026', dateTime: '2026-03-10 | 11:00 AM', lots: 35, status: 'live' },
         { id: 'A-002', name: 'Winter Wear Auction', dateTime: '2026-03-25 | 02:00 PM', lots: 20, status: 'scheduled' },
         { id: 'A-003', name: 'Electronics Clearance', dateTime: '2026-03-30 | 04:00 PM', lots: 15, status: 'ended' },
       ])
     );
     setBids(
-      storage.get<Bid[]>('user_bids', [
+      storage.getJSON<Bid[]>('user_bids', [
         { id: 'B-1', auction: 'Costly Items Auction Q1 2026', lot: '#L-001', myBid: 12000, highest: 15000, status: 'outbid' },
         { id: 'B-2', auction: 'Winter Wear Auction', lot: '#L-010', myBid: 5000, highest: 5000, status: 'winning' },
       ])
     );
     setWon(
-      storage.get<Won[]>('user_won', [
+      storage.getJSON<Won[]>('user_won', [
         { id: 'W-1', auction: 'Gadgets Auction', lot: '#L-020', winningBid: 25000, status: 'payment' },
       ])
     );
     setNotifications(
-      storage.get<Notification[]>('user_notifications', [
+      storage.getJSON<Notification[]>('user_notifications', [
         { id: 'N-1', type: 'bid', message: 'You have been outbid on #L-001', lot: '#L-001', date: '2026-01-05', status: 'unread' },
         { id: 'N-2', type: 'system', message: 'New auction added: Winter Wear Auction', date: '2026-01-04', status: 'read' },
       ])
@@ -155,10 +108,10 @@ export default function UserDashboard() {
   }, []);
 
   // Persist
-  useEffect(() => storage.set('user_auctions', auctions), [auctions]);
-  useEffect(() => storage.set('user_bids', bids), [bids]);
-  useEffect(() => storage.set('user_won', won), [won]);
-  useEffect(() => storage.set('user_notifications', notifications), [notifications]);
+  useEffect(() => storage.setJSON('user_auctions', auctions), [auctions]);
+  useEffect(() => storage.setJSON('user_bids', bids), [bids]);
+  useEffect(() => storage.setJSON('user_won', won), [won]);
+  useEffect(() => storage.setJSON('user_notifications', notifications), [notifications]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -276,47 +229,50 @@ export default function UserDashboard() {
       </div>
 
       {/* Header */}
-      <header className="main-header">
-        <div className="header-content">
-          <div className="logo brand-row">
-            <img src="/paa-logo.png" alt="IIAP Logo" className="brand-mark" />
-            <div className="brand-text">
-              <h1>IIAP Lost & Found Auction System</h1>
-            </div>
-          </div>
-          <div className="utility-nav">
+      <Header
+        title="IIAP Lost & Found Auction System"
+        rightSlot={
+          <>
             <span>Welcome, User</span>
             <button className="action-btn btn-danger btn-sm">Logout</button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <main className="dashboard-container">
-        <aside className="sidebar">
-          <h2>Menu</h2>
-          <ul>
-            <li className={activeTab === 'active' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('active')}>
-                <i className="fas fa-gavel" /> Active Auctions
-              </a>
-            </li>
-            <li className={activeTab === 'my-bids' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('my-bids')}>
-                <i className="fas fa-hand-holding-usd" /> My Bids
-              </a>
-            </li>
-            <li className={activeTab === 'won' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('won')}>
-                <i className="fas fa-trophy" /> Won Auctions
-              </a>
-            </li>
-            <li className={activeTab === 'notifications' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('notifications')}>
-                <i className="fas fa-bell" /> Notifications
-              </a>
-            </li>
-          </ul>
-        </aside>
+        <Sidebar
+          title="Menu"
+          items={[
+            {
+              key: 'active',
+              label: 'Active Auctions',
+              iconClass: 'fas fa-gavel',
+              active: activeTab === 'active',
+              onClick: () => setActiveTab('active'),
+            },
+            {
+              key: 'my-bids',
+              label: 'My Bids',
+              iconClass: 'fas fa-hand-holding-usd',
+              active: activeTab === 'my-bids',
+              onClick: () => setActiveTab('my-bids'),
+            },
+            {
+              key: 'won',
+              label: 'Won Auctions',
+              iconClass: 'fas fa-trophy',
+              active: activeTab === 'won',
+              onClick: () => setActiveTab('won'),
+            },
+            {
+              key: 'notifications',
+              label: 'Notifications',
+              iconClass: 'fas fa-bell',
+              active: activeTab === 'notifications',
+              onClick: () => setActiveTab('notifications'),
+            },
+          ]}
+        />
 
         <section className="content-area">
           {activeTab === 'active' && (

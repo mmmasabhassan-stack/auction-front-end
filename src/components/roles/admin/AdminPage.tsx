@@ -1,30 +1,17 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Auction, Item, Lot, User } from '../../types/auction';
-import { useTheme } from '../../hooks/useTheme';
-import { AppHeader } from '../../components/AppHeader';
-import { AppFooter } from '../../components/AppFooter';
-import { AppSidebar } from '../../components/AppSidebar';
+import type { Auction, Item, Lot, User } from '@/types/auction';
+import { StorageKeys } from '@/constants/storageKeys';
+import { storage } from '@/services/storage';
+import { useTheme } from '@/hooks/useTheme';
+import { Header } from '@/components/layout/Header';
+import { Footer } from '@/components/layout/Footer';
+import { Sidebar } from '@/components/layout/Sidebar';
 
 const PAGE_SIZE = 10;
 
-const storage = {
-  get<T>(key: string, fallback: T): T {
-    if (typeof window === 'undefined') return fallback;
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      return JSON.parse(raw) as T;
-    } catch {
-      return fallback;
-    }
-  },
-  set<T>(key: string, value: T) {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(key, JSON.stringify(value));
-  },
-};
+// uses shared `storage` service
 
 const Modal: React.FC<{
   open: boolean;
@@ -166,7 +153,7 @@ export default function AdminDashboard() {
   // Load data
   useEffect(() => {
     setAuctions(
-      storage.get<Auction[]>('auctionEvents', [
+      storage.getJSON<Auction[]>(StorageKeys.auctionEvents, [
         {
           id: '#A-001',
           auctionName: 'Costly Items Auction Q1 2026',
@@ -182,19 +169,19 @@ export default function AdminDashboard() {
       ])
     );
     setLots(
-      storage.get<Lot[]>('auctionLots', [
+      storage.getJSON<Lot[]>(StorageKeys.auctionLots, [
         { id: '#L-001', lotName: 'High-End Laptops & Tablets (Damaged)', lotType: 'expensive', itemCount: 3, basePrice: 10000, assignedAuction: '#A-001' },
         { id: '#L-002', lotName: 'Bulk Winter Wear (15 Coats)', lotType: 'general', itemCount: 15, basePrice: 1000, assignedAuction: '#A-001' },
       ])
     );
     setItems(
-      storage.get<Item[]>('auctionItems', [
+      storage.getJSON<Item[]>(StorageKeys.auctionItems, [
         { id: '#00123', parentName: 'Black Check-in Trolley Bag', subItemsCount: 4, dateFound: '2025-10-25' },
         { id: '#00124', parentName: 'Apple MacBook Pro (Stand-alone)', subItemsCount: 0, dateFound: '2025-10-26' },
       ])
     );
     setUsers(
-      storage.get<User[]>('auctionUsers', [
+      storage.getJSON<User[]>(StorageKeys.auctionUsers, [
         { id: '1001', name: 'Ali Khan', cnic: '42101-1234567-3', paa: 'PAA-1234', status: 'Enabled', role: 'Bidder' },
         { id: '1002', name: 'Sara Ahmed', cnic: '42101-9876543-9', paa: 'PAA-5678', status: 'Disabled', role: 'Bidder' },
       ])
@@ -202,10 +189,10 @@ export default function AdminDashboard() {
   }, []);
 
   // Persist
-  useEffect(() => storage.set('auctionEvents', auctions), [auctions]);
-  useEffect(() => storage.set('auctionLots', lots), [lots]);
-  useEffect(() => storage.set('auctionItems', items), [items]);
-  useEffect(() => storage.set('auctionUsers', users), [users]);
+  useEffect(() => storage.setJSON(StorageKeys.auctionEvents, auctions), [auctions]);
+  useEffect(() => storage.setJSON(StorageKeys.auctionLots, lots), [lots]);
+  useEffect(() => storage.setJSON(StorageKeys.auctionItems, items), [items]);
+  useEffect(() => storage.setJSON(StorageKeys.auctionUsers, users), [users]);
 
   // Timer logic
   useEffect(() => {
@@ -423,10 +410,10 @@ export default function AdminDashboard() {
       </div>
 
       {/* Header */}
-      <AppHeader title="IIAP Lost & Found Auction System" rightText="Admin Dashboard" rightHref="/admin" />
+      <Header title="IIAP Lost & Found Auction System" rightText="Admin Dashboard" rightHref="/admin" />
 
       <main className="dashboard-container">
-        <AppSidebar
+        <Sidebar
           title="Admin Menu"
           items={[
             {
@@ -768,7 +755,7 @@ export default function AdminDashboard() {
         </section>
       </main>
 
-      <AppFooter />
+      <Footer />
 
       {/* Modals */}
       <Modal
