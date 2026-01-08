@@ -4,6 +4,9 @@ import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from
 import '../globals.css';
 import { Auction as SharedAuction, Item as SharedItem, Lot as SharedLot } from '../../types/auction';
 import { useTheme } from '../../hooks/useTheme';
+import { AppHeader } from '../../components/AppHeader';
+import { AppFooter } from '../../components/AppFooter';
+import { AppSidebar } from '../../components/AppSidebar';
 
 // Map shared types to relaxed shapes for this page
 type Auction = Partial<Omit<SharedAuction, 'id'>> & {
@@ -220,6 +223,7 @@ function Notification({ message, type, onClose }: { message: string; type: 'succ
 // ==================== MAIN COMPONENT ====================
 export default function SubAdminPage() {
   const [activeTab, setActiveTab] = useState('auction-start');
+  const { isDark } = useTheme();
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [lots, setLots] = useState<Lot[]>([]);
   const [items, setItems] = useState<AuctionItem[]>([]);
@@ -684,83 +688,60 @@ export default function SubAdminPage() {
   };
 
   return (
-    <div className="sub-admin-container">
-      {/* Utility Bar */}
-      <div className="utility-bar">
-        <div className="utility-bar-content brand-row">
-          <div className="brand-left">
-            <img src="/paa-logo.png" alt="IIAP Logo" className="brand-mark" />
-            <div className="brand-text">
-              <h1>IIAP Lost & Found Auction System</h1>
-            </div>
-          </div>
-          <div className="utility-right">
-            <p>Welcome, Sub-Admin | <a href="#logout">Logout</a></p>
-          </div>
-        </div>
-      </div>
+    <div className={`page-shell ${isDark ? 'dark' : ''}`}>
+      {/* Top utility bar (matches Admin) */}
+      <UtilityBar />
 
       {/* Header */}
-      <header className="main-header">
-        <div className="header-content">
-          <div className="logo">
-            <h1>IIAP Lost & Found Auction System</h1>
-            <p>Sub-Admin Control Panel</p>
-          </div>
-          <div className="utility-nav">
-            <a href="#home">Home</a>
-            <a href="#dashboard">Dashboard</a>
-            <a href="#help">Help</a>
-          </div>
-        </div>
-        <nav className="main-nav">
-          <ul>
-            <li><a href="#auction">Auction Management</a></li>
-            <li><a href="#items">Item Management</a></li>
-            <li><a href="#reports">Reports</a></li>
-          </ul>
-        </nav>
-      </header>
+      <AppHeader title="IIAP Lost & Found Auction System" rightText="Sub-Admin Dashboard" rightHref="/sub-admin" />
 
       <main className="dashboard-container">
         {/* Sidebar */}
-        <aside className="sidebar">
-          <h2>Sub-Admin Menu</h2>
-          <ul>
-            <li>
-              <a 
-                onClick={() => { setActiveTab('auction-start'); closeAllModals(); }} 
-                className={activeTab === 'auction-start' ? 'active' : ''}
-              >
-                ⏱️ Auction Start
-              </a>
-            </li>
-            <li>
-              <a 
-                onClick={() => { setActiveTab('create-auction'); closeAllModals(); }} 
-                className={activeTab === 'create-auction' ? 'active' : ''}
-              >
-                ➕ Create Auction
-              </a>
-            </li>
-            <li>
-              <a 
-                onClick={() => { setActiveTab('create-lots'); closeAllModals(); }} 
-                className={activeTab === 'create-lots' ? 'active' : ''}
-              >
-                📦 Create Lots
-              </a>
-            </li>
-            <li>
-              <a 
-                onClick={() => { setActiveTab('create-items'); closeAllModals(); }} 
-                className={activeTab === 'create-items' ? 'active' : ''}
-              >
-                📋 Create Items
-              </a>
-            </li>
-          </ul>
-        </aside>
+        <AppSidebar
+          title="Sub-Admin Menu"
+          items={[
+            {
+              key: 'auction-start',
+              label: 'Auction Start',
+              iconClass: 'fas fa-stopwatch',
+              active: activeTab === 'auction-start',
+              onClick: () => {
+                setActiveTab('auction-start');
+                closeAllModals();
+              },
+            },
+            {
+              key: 'create-auction',
+              label: 'Create Auction',
+              iconClass: 'fas fa-calendar-plus',
+              active: activeTab === 'create-auction',
+              onClick: () => {
+                setActiveTab('create-auction');
+                closeAllModals();
+              },
+            },
+            {
+              key: 'create-lots',
+              label: 'Create Lots',
+              iconClass: 'fas fa-boxes-stacked',
+              active: activeTab === 'create-lots',
+              onClick: () => {
+                setActiveTab('create-lots');
+                closeAllModals();
+              },
+            },
+            {
+              key: 'create-items',
+              label: 'Create Items',
+              iconClass: 'fas fa-list-check',
+              active: activeTab === 'create-items',
+              onClick: () => {
+                setActiveTab('create-items');
+                closeAllModals();
+              },
+            },
+          ]}
+        />
 
         {/* Content Area */}
         <section className="content-area">
@@ -797,18 +778,35 @@ export default function SubAdminPage() {
                   <div className="timer-display">{formatTime(timeRemaining)}</div>
                 </div>
                 <div className="control-buttons">
-                  <button id="start-btn" onClick={() => startTimer()} className="btn btn-success">
+                  <button
+                    id="start-btn"
+                    onClick={() => startTimer()}
+                    className="btn btn-success"
+                    disabled={isRunning}
+                    aria-disabled={isRunning}
+                    title={isRunning ? 'Timer already running' : 'Start timer'}
+                  >
                     <i className="fas fa-play"></i> Start Timer
                   </button>
-                  <button id="pause-btn" onClick={() => pauseTimer()} className="btn btn-warning">
+                  <button
+                    id="pause-btn"
+                    onClick={() => pauseTimer()}
+                    className="btn btn-warning"
+                    disabled={!isRunning}
+                    aria-disabled={!isRunning}
+                    title={!isRunning ? 'Timer is not running' : 'Pause timer'}
+                  >
                     <i className="fas fa-pause"></i> Pause Timer
                   </button>
                   <button id="next-lot-btn" onClick={() => nextLot()} className="btn btn-info">
                     <i className="fas fa-forward"></i> Next Lot
                   </button>
                 </div>
-                <div id="live-status-text" style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '6px' }}>
-                  <strong>Status:</strong> {isRunning ? '🔴 LIVE' : '⏸️ PAUSED'}
+                <div id="live-status-text" className="live-status-box" aria-live="polite">
+                  <strong>Status:</strong>{' '}
+                  <span className={`live-status-badge ${isRunning ? 'is-running' : 'is-paused'}`}>
+                    {isRunning ? '🔴 LIVE' : '⏸️ PAUSED'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -969,6 +967,8 @@ export default function SubAdminPage() {
           )}
         </section>
       </main>
+
+      <AppFooter />
 
       {/* ==================== MODALS ==================== */}
 
@@ -1317,10 +1317,6 @@ export default function SubAdminPage() {
           </div>
         </div>
       )}
-
-      <footer className="main-footer">
-        <p>Copyright © IIAP Lost & Found Auction System 2025 | <a href="#terms">Terms & Conditions</a> | <a href="#privacy">Privacy Policy</a></p>
-      </footer>
 
       {/* Notification */}
       {notification && (

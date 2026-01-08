@@ -3,6 +3,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Auction, Item, Lot, User } from '../../types/auction';
 import { useTheme } from '../../hooks/useTheme';
+import { AppHeader } from '../../components/AppHeader';
+import { AppFooter } from '../../components/AppFooter';
+import { AppSidebar } from '../../components/AppSidebar';
 
 const PAGE_SIZE = 10;
 
@@ -384,7 +387,7 @@ export default function AdminDashboard() {
 
   const deleteRow = (type: 'auction' | 'lot' | 'item' | 'user', id: string) => {
     if (type === 'auction') setAuctions((p) => p.filter((x) => x.id !== id));
-    if (type === 'lot') setLots((p) => p.filter((x) => x.id !== id));
+    if (type === 'lot') setLots((p) => p.filter((x) => x.id !== id)); 
     if (type === 'item') setItems((p) => p.filter((x) => x.id !== id));
     if (type === 'user') setUsers((p) => p.filter((x) => x.id !== id));
   };
@@ -420,57 +423,66 @@ export default function AdminDashboard() {
       </div>
 
       {/* Header */}
-      <header className="main-header">
-        <div className="header-content">
-          <div className="logo brand-row">
-            <img src="/paa-logo.png" alt="IIAP Logo" className="brand-mark" />
-            <div className="brand-text">
-              <h1>IIAP Lost & Found Auction System</h1>
-            </div>
-          </div>
-          <div className="utility-nav">
-            <a href="/admin">Admin Dashboard</a>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="IIAP Lost & Found Auction System" rightText="Admin Dashboard" rightHref="/admin" />
 
       <main className="dashboard-container">
-        <aside className="sidebar">
-          <h2>Admin Menu</h2>
-          <ul>
-            <li className={activeTab === 'auction-start' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('auction-start')}>Auction Start Dashboard</a>
-            </li>
-            <li className={activeTab === 'auctions' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('auctions')}>Create/Manage Auction</a>
-            </li>
-            <li className={activeTab === 'lots' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('lots')}>Create/Manage Lots</a>
-            </li>
-            <li className={activeTab === 'items' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('items')}>Create/Manage Items</a>
-            </li>
-            <li className={activeTab === 'users' ? 'active-menu' : ''}>
-              <a onClick={() => setActiveTab('users')}>User Management</a>
-            </li>
-          </ul>
-        </aside>
+        <AppSidebar
+          title="Admin Menu"
+          items={[
+            {
+              key: 'auction-start',
+              label: 'Auction Start Dashboard',
+              iconClass: 'fas fa-fire',
+              active: activeTab === 'auction-start',
+              onClick: () => setActiveTab('auction-start'),
+            },
+            {
+              key: 'auctions',
+              label: 'Create/Manage Auction',
+              iconClass: 'fas fa-calendar-plus',
+              active: activeTab === 'auctions',
+              onClick: () => setActiveTab('auctions'),
+            },
+            {
+              key: 'lots',
+              label: 'Create/Manage Lots',
+              iconClass: 'fas fa-boxes-stacked',
+              active: activeTab === 'lots',
+              onClick: () => setActiveTab('lots'),
+            },
+            {
+              key: 'items',
+              label: 'Create/Manage Items',
+              iconClass: 'fas fa-list-check',
+              active: activeTab === 'items',
+              onClick: () => setActiveTab('items'),
+            },
+            {
+              key: 'users',
+              label: 'User Management',
+              iconClass: 'fas fa-users',
+              active: activeTab === 'users',
+              onClick: () => setActiveTab('users'),
+            },
+          ]}
+        />
 
         <section className="content-area">
           {activeTab === 'auction-start' && (
             <div className="dashboard-content active-content">
               <h2>🔥 Auction Start Dashboard</h2>
-              <p className="page-subtitle live-lead" style={{ color: '#000' }}>Start, pause, and switch lots for the live auction.</p>
+              <p className="page-subtitle live-lead">Start, pause, and switch lots for the live auction.</p>
 
               <div className="live-control-box">
                 <div className="event-info">
                   <h3>Current Lot</h3>
-                  <p style={{ color: '#000' }}>
+                  <p className="live-lead">
                     {currentLot ? `${currentLot.id} - ${currentLot.lotName}` : 'Awaiting start'}
                   </p>
                   <div className="status-line">
                     <span className="status-label">LIVE Status:</span>
                     <span className={`status-pill ${isRunning ? 'pill-live' : 'pill-stopped'}`}>
+                      <i className={`fas ${isRunning ? 'fa-circle-play' : 'fa-circle-stop'}`} style={{ marginRight: 8 }} />
                       {isRunning ? 'RUNNING' : 'STOPPED'}
                     </span>
                   </div>
@@ -540,13 +552,31 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="control-actions">
-                  <button className="control-btn btn-success btn-large" onClick={startAuction}>
+                  <button
+                    className="control-btn btn-success btn-large"
+                    onClick={startAuction}
+                    disabled={isRunning || lots.length === 0}
+                    aria-disabled={isRunning || lots.length === 0}
+                    title={lots.length === 0 ? 'Add lots first' : isRunning ? 'Already running' : 'Start'}
+                  >
                     {isRunning ? 'Running' : 'Start'}
                   </button>
-                  <button className="control-btn btn-danger btn-large" onClick={pauseAuction}>
+                  <button
+                    className="control-btn btn-danger btn-large"
+                    onClick={pauseAuction}
+                    disabled={!isRunning}
+                    aria-disabled={!isRunning}
+                    title={!isRunning ? 'Not running' : 'Pause'}
+                  >
                     Pause
                   </button>
-                  <button className="control-btn btn-info btn-large" onClick={goNextLot}>
+                  <button
+                    className="control-btn btn-info btn-large"
+                    onClick={goNextLot}
+                    disabled={lots.length === 0}
+                    aria-disabled={lots.length === 0}
+                    title={lots.length === 0 ? 'Add lots first' : 'Next lot'}
+                  >
                     Next Lot
                   </button>
                 </div>
@@ -738,9 +768,7 @@ export default function AdminDashboard() {
         </section>
       </main>
 
-      <footer className="main-footer">
-        <p>Copyright © IIAP Lost & Found Auction System 2025</p>
-      </footer>
+      <AppFooter />
 
       {/* Modals */}
       <Modal
