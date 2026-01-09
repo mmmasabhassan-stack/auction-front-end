@@ -19,6 +19,22 @@
   --text-secondary: #666;
   --border-color: #ddd;
   --bg-light: #f5f5f5;
+
+  /* Theme-aware surfaces (used by modals, tables, inputs) */
+  --surface-0: #ffffff;
+  --surface-1: #f7f8fa;
+  --surface-2: #eef1f4;
+
+  --input-bg: #ffffff;
+  --input-fg: #171717;
+  --placeholder: rgba(23, 23, 23, 0.55);
+
+  --shadow-color: rgba(0, 0, 0, 0.12);
+  --shadow-color-strong: rgba(0, 0, 0, 0.22);
+  --focus-ring: rgba(26, 95, 63, 0.22);
+
+  /* Consistent spacing between buttons */
+  --button-margin: 8px;
 }
 
 /* @theme inline {
@@ -173,11 +189,32 @@ body {
 }
 
 /* Dark Mode Styles */
-body.dark-mode {
+body.dark-mode,
+.page-shell.dark {
   background: radial-gradient(1200px 600px at 10% 0%, rgba(26, 95, 63, 0.35) 0%, rgba(0, 0, 0, 0) 55%),
     radial-gradient(900px 500px at 90% 20%, rgba(13, 62, 38, 0.35) 0%, rgba(0, 0, 0, 0) 60%),
     linear-gradient(180deg, #0b1a12 0%, #050705 100%);
   color: #e0e0e0;
+
+  /* Override theme variables for consistent dark-mode contrast */
+  --surface-0: #1f1f1f;
+  --surface-1: #232323;
+  --surface-2: #2a2a2a;
+
+  --light-bg: #171717;
+  --bg-light: #171717;
+
+  --input-bg: #141414;
+  --input-fg: #e8e8e8;
+  --placeholder: rgba(232, 232, 232, 0.7);
+
+  --border-color: #3a3a3a;
+  --text-dark: #e8e8e8;
+  --text-light: rgba(232, 232, 232, 0.8);
+
+  --shadow-color: rgba(0, 0, 0, 0.45);
+  --shadow-color-strong: rgba(0, 0, 0, 0.7);
+  --focus-ring: rgba(155, 230, 199, 0.22);
 }
 
 body.dark-mode .dashboard-content {
@@ -185,12 +222,14 @@ body.dark-mode .dashboard-content {
   color: #e8e8e8;
 }
 
-body.dark-mode .data-table {
-  background-color: #2a2a2a;
+body.dark-mode .data-table,
+.page-shell.dark .data-table {
+  background-color: var(--surface-0);
 }
 
-body.dark-mode .data-table td {
-  color: #e8e8e8;
+body.dark-mode .data-table td,
+.page-shell.dark .data-table td {
+  color: var(--text-dark);
 }
 
 body.dark-mode .data-table thead {
@@ -209,8 +248,8 @@ body.dark-mode .data-table tbody tr:hover {
 }
 
 body.dark-mode .modal-container {
-  background-color: #2a2a2a;
-  color: #e0e0e0;
+  background-color: var(--surface-0);
+  color: var(--input-fg);
 }
 
 body.dark-mode .content-area,
@@ -242,9 +281,30 @@ body.dark-mode ::placeholder {
 body.dark-mode .modal-body input,
 body.dark-mode .modal-body select,
 body.dark-mode .modal-body textarea {
-  background-color: #1a1a1a;
-  color: #e0e0e0;
-  border-color: #444;
+  background-color: var(--input-bg);
+  color: var(--input-fg);
+  border-color: var(--border-color);
+}
+
+/* Smooth theme transitions for key UI elements */
+.modal-container,
+.content-area,
+.dashboard-content,
+.data-table,
+.excel-import-section,
+.excel-table,
+.excel-input,
+.btn,
+.action-btn,
+.control-btn,
+.utility-btn {
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    filter 160ms ease;
 }
 
 body.dark-mode .sidebar {
@@ -538,6 +598,26 @@ body.dark-mode .content-area {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
+/* Efficient, consistent spacing for buttons in main UI areas */
+:where(.dashboard-content, .modal-body) :where(
+  button,
+  .btn,
+  .action-btn,
+  .control-btn,
+  .btn-excel-import,
+  .btn-add-row
+) {
+  margin: 0 var(--button-margin) var(--button-margin) 0;
+}
+
+/* Containers that already manage spacing via `gap` should not add margins */
+.modal-footer :where(button, .btn, .action-btn, .control-btn),
+.control-actions :where(button, .btn, .action-btn, .control-btn),
+.pagination :where(.pagination-prev, .pagination-next),
+.utility-bar :where(button, .utility-btn) {
+  margin: 0;
+}
+
 .btn:hover,
 .action-btn:hover,
 .control-btn:hover,
@@ -576,6 +656,9 @@ body.dark-mode .content-area {
 
 .modal-container {
   border: 1px solid var(--border-color);
+  background-color: var(--surface-0);
+  color: var(--input-fg);
+  box-shadow: 0 18px 42px var(--shadow-color);
 }
 
 .modal-header h2 {
@@ -774,10 +857,11 @@ body.dark-mode .search-input::placeholder {
   width: 100%;
   border-collapse: collapse;
   margin: 20px 0;
-  background-color: white;
+  background-color: var(--surface-0);
   border-radius: 6px;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border-color);
 }
 
 .data-table thead {
@@ -799,11 +883,11 @@ body.dark-mode .search-input::placeholder {
 .data-table tbody tr {
   border-bottom: 1px solid var(--border-color);
   transition: all 0.2s ease;
-  background: #ffffff;
+  background: var(--surface-0);
 }
 
 .data-table tbody tr:hover {
-  background-color: #f5f7fa;
+  background-color: var(--surface-1);
   transform: scale(1.005);
   box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
@@ -843,13 +927,14 @@ body.dark-mode .search-input::placeholder {
 }
 
 .modal-container {
-  background-color: white;
+  background-color: var(--surface-0);
   border-radius: 8px;
   max-width: 600px;
   width: 90%;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 18px 42px var(--shadow-color);
   animation: slideDown 0.3s ease;
 }
 
@@ -883,6 +968,8 @@ body.dark-mode .search-input::placeholder {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  flex: 1;
+  text-align: left;
 }
 
 .close-btn {
@@ -905,7 +992,8 @@ body.dark-mode .search-input::placeholder {
 
 .modal-body {
   padding: 26px;
-  background: #fafbfc;
+  background: var(--surface-1);
+  color: var(--input-fg);
 }
 
 .modal-body input,
@@ -919,6 +1007,8 @@ body.dark-mode .search-input::placeholder {
   font-family: inherit;
   font-size: 14px;
   transition: border-color 0.3s, box-shadow 0.3s;
+  background-color: var(--input-bg);
+  color: var(--input-fg);
 }
 
 .modal-body input:focus,
@@ -926,7 +1016,7 @@ body.dark-mode .search-input::placeholder {
 .modal-body select:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px rgba(26, 95, 63, 0.1);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .modal-body textarea {
@@ -943,7 +1033,7 @@ body.dark-mode .search-input::placeholder {
   border-radius: 6px;
   padding: 15px;
   margin-bottom: 15px;
-  background-color: var(--light-bg);
+  background-color: var(--surface-1);
 }
 
 .lot-selection-item,
@@ -955,13 +1045,14 @@ body.dark-mode .search-input::placeholder {
   border-radius: 6px;
   margin-bottom: 10px;
   cursor: pointer;
-  background-color: white;
+  background-color: var(--surface-0);
   transition: all 0.3s ease;
+  color: var(--text-dark);
 }
 
 .lot-selection-item:hover,
 .parent-item-group:hover {
-  background-color: var(--light-bg);
+  background-color: var(--surface-1);
   border-color: var(--accent-color);
 }
 
@@ -978,6 +1069,7 @@ body.dark-mode .search-input::placeholder {
   margin: 0;
   cursor: pointer;
   flex: 1;
+  color: var(--text-dark);
 }
 
 .lot-selection-item p,
@@ -1054,7 +1146,8 @@ body.dark-mode .search-input::placeholder {
 .pagination-next {
   padding: 10px 15px;
   border: 1px solid var(--border-color);
-  background-color: white;
+  background-color: var(--surface-0);
+  color: var(--text-dark);
   cursor: pointer;
   border-radius: 8px;
   transition: all 0.3s ease;
@@ -1065,10 +1158,28 @@ body.dark-mode .search-input::placeholder {
 
 .pagination-prev:hover,
 .pagination-next:hover {
-  background-color: #f5f7fa;
+  background-color: var(--surface-1);
   color: var(--accent-color);
   border-color: var(--accent-color);
   box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+/* Disabled pagination buttons (Sub-Admin uses <button disabled>) */
+.pagination-prev:disabled,
+.pagination-next:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  color: var(--text-light);
+}
+
+/* "Disabled" pagination links (Admin uses <a aria-disabled>) */
+.pagination-prev[aria-disabled="true"],
+.pagination-next[aria-disabled="true"] {
+  opacity: 0.65;
+  pointer-events: none;
+  color: var(--text-light);
 }
 
 .pagination span {
@@ -1832,21 +1943,35 @@ body.dark-mode .live-status-badge.is-paused {
 }
 
 .btn-cancel {
-  background-color: #6c757d;
-  color: white;
+  background-color: #dc3545;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  box-shadow: 0 6px 16px var(--shadow-color);
 }
 
 .btn-cancel:hover {
-  background-color: #5a6268;
+  background-color: #c82333;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px var(--shadow-color-strong);
 }
 
 .btn-next {
-  background-color: var(--accent-color);
-  color: white;
+  background-color: #28a745;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  box-shadow: 0 6px 16px var(--shadow-color);
 }
 
 .btn-next:hover {
-  background-color: var(--primary-color);
+  background-color: #218838;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px var(--shadow-color-strong);
 }
 
 /* Status Badges */
@@ -1897,6 +2022,7 @@ body.dark-mode .live-status-badge.is-paused {
   padding-top: 22px;
   border-top: 2px solid var(--border-color);
   margin-top: 20px;
+  background: var(--surface-1);
 }
 
 /* Form Styles */
@@ -1963,7 +2089,8 @@ body.dark-mode .live-status-badge.is-paused {
 .excel-import-section {
   margin-bottom: 20px;
   padding: 15px;
-  background-color: var(--light-bg);
+  background-color: var(--surface-1);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   text-align: center;
 }
@@ -1980,13 +2107,14 @@ body.dark-mode .live-status-badge.is-paused {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .btn-excel-import:hover {
   background-color: #1a5f3a;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  filter: brightness(1.03);
 }
 
 .manual-entry-section {
@@ -2008,10 +2136,11 @@ body.dark-mode .live-status-badge.is-paused {
 .excel-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: white;
+  background-color: var(--surface-0);
   border-radius: 6px;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border-color);
 }
 
 .excel-table thead {
@@ -2031,10 +2160,11 @@ body.dark-mode .live-status-badge.is-paused {
 .excel-table td {
   padding: 8px;
   border-bottom: 1px solid var(--border-color);
+  color: var(--text-dark);
 }
 
 .excel-table tbody tr:nth-child(even) {
-  background-color: var(--light-bg);
+  background-color: var(--surface-1);
 }
 
 .excel-table tbody tr:hover {
@@ -2047,13 +2177,19 @@ body.dark-mode .live-status-badge.is-paused {
   border: 1px solid var(--border-color);
   border-radius: 3px;
   font-size: 12px;
-  transition: border-color 0.3s ease;
+  background-color: var(--input-bg);
+  color: var(--input-fg);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease;
 }
 
 .excel-input:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px rgba(26, 95, 63, 0.1);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.excel-input::placeholder {
+  color: var(--placeholder);
 }
 
 .btn-add-row {
@@ -2074,6 +2210,7 @@ body.dark-mode .live-status-badge.is-paused {
 .btn-add-row:hover {
   background-color: var(--primary-color);
   transform: translateY(-1px);
+  filter: brightness(1.02);
 }
 
 .btn-remove-row {
@@ -2094,6 +2231,27 @@ body.dark-mode .live-status-badge.is-paused {
 .btn-remove-row:hover {
   background-color: #c82333;
   transform: scale(1.1);
+  filter: brightness(1.03);
+}
+
+/* Action buttons in dark mode: add subtle outline to keep visibility on dark surfaces */
+body.dark-mode .action-btn {
+  box-shadow: 0 2px 10px var(--shadow-color);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode .action-btn:hover {
+  box-shadow: 0 6px 18px var(--shadow-color-strong);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Save/Cancel buttons: ensure contrast in dark mode */
+body.dark-mode .btn-cancel {
+  background-color: #dc3545;
+}
+
+body.dark-mode .btn-cancel:hover {
+  background-color: #c82333;
 }
 
 .action-col {

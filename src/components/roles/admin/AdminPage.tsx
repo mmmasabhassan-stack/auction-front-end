@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { Auction, Item, Lot, User } from '@/types/auction';
+import type { Auction, Item, ItemRow, Lot, LotSelectedSubItem, User } from '@/types/auction';
 import { StorageKeys } from '@/constants/storageKeys';
 import { storage } from '@/services/storage';
 import { useTheme } from '@/hooks/useTheme';
@@ -49,10 +49,10 @@ const Modal: React.FC<{
         ref={containerRef}
       >
         <div className="modal-header">
+          <h2>{title}</h2>
           <button className="modal-close" aria-label="Close modal" onClick={onClose}>
             &times;
           </button>
-          <h2>{title}</h2>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
@@ -99,14 +99,26 @@ export default function AdminDashboard() {
 
   const [auctionForm, setAuctionForm] = useState<Partial<Auction>>({});
   const [lotForm, setLotForm] = useState<Partial<Lot>>({});
-  const [itemForm, setItemForm] = useState<Partial<Item>>({});
   const [userForm, setUserForm] = useState<Partial<User>>({});
   const [editingIds, setEditingIds] = useState<{ auction?: string; lot?: string; item?: string; user?: string }>({});
+  const emptyItemRow = (): ItemRow => ({
+    itemNo: '',
+    srNo: '',
+    description: '',
+    qty: 0,
+    condition: '',
+    make: '',
+    makeNo: '',
+  });
+  const [itemRows, setItemRows] = useState<ItemRow[]>([emptyItemRow()]);
+  const itemExcelInputRef = useRef<HTMLInputElement | null>(null);
 
   const [auctionModalOpen, setAuctionModalOpen] = useState(false);
   const [lotModalOpen, setLotModalOpen] = useState(false);
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [userModalOpen, setUserModalOpen] = useState(false);
+  const [lotItemsModalOpen, setLotItemsModalOpen] = useState(false);
+  const [lotItemsSearch, setLotItemsSearch] = useState('');
 
   const [pagination, setPagination] = useState({
     auctions: 1,
@@ -287,20 +299,30 @@ export default function AdminDashboard() {
     setEditingIds((prev) => ({ ...prev, lot: lot?.id }));
     setLotForm(
       lot || {
+        id: '',
         lotName: '',
         lotType: 'general',
-        itemCount: 1,
+        itemCount: 0,
         basePrice: 0,
-        assignedAuction: auctions[0]?.id,
+        selectedSubItems: [],
       }
     );
     setLotModalOpen(true);
   };
 
   const saveLot = () => {
-    if (!lotForm.lotName) return;
+    const lotId = String(lotForm.id ?? '').trim();
+    if (!editingIds.lot && !lotId) {
+      alert('Lot ID is required.');
+      return;
+    }
+    if (!lotForm.lotName) {
+      alert('Lot Name is required.');
+      return;
+    }
     const safeBase = lotForm.basePrice ?? 0;
-    const safeItems = lotForm.itemCount ?? 1;
+    const selectedCount = lotForm.selectedSubItems?.length ?? 0;
+    const safeItems = selectedCount > 0 ? selectedCount : (lotForm.itemCount ?? 0);
     if (editingIds.lot) {
       setLots((prev) =>
         prev.map((l) =>
@@ -310,11 +332,15 @@ export default function AdminDashboard() {
         )
       );
     } else {
+      if (lots.some((l) => l.id === lotId)) {
+        alert(`Lot ID "${lotId}" already exists. Please use a unique Lot ID.`);
+        return;
+      }
       setLots((prev) => [
         ...prev,
         {
           ...(lotForm as Lot),
-          id: genId('#L'),
+          id: lotId,
           basePrice: safeBase,
           itemCount: safeItems,
         },
@@ -323,29 +349,170 @@ export default function AdminDashboard() {
     setLotModalOpen(false);
   };
 
+  const lotSelectedMap = useMemo(() => {
+    const map = new Map<string, LotSelectedSubItem>();
+    for (const s of lotForm.selectedSubItems ?? []) {
+      map.set(`${s.parentId}::${s.rowIndex}`, s);
+    }
+    return map;
+  }, [lotForm.selectedSubItems]);
+
+  const toggleLotSubItem = (parent: Item, row: ItemRow, rowIndex: number) => {
+    setLotForm((prev) => {
+      const current = prev.selectedSubItems ?? [];
+      const map = new Map<string, LotSelectedSubItem>(current.map((s) => [`${s.parentId}::${s.rowIndex}`, s]));
+      const key = `${parent.id}::${rowIndex}`;
+      if (map.has(key)) {
+        map.delete(key);
+      } else {
+        map.set(key, {
+          parentId: parent.id,
+          parentName: parent.parentName,
+          rowIndex,
+          row,
+        });
+      }
+      const next = Array.from(map.values());
+      return { ...prev, selectedSubItems: next, itemCount: next.length };
+    });
+  };
+
+  const setLotParentSelected = (parent: Item, checked: boolean) => {
+    setLotForm((prev) => {
+      const current = prev.selectedSubItems ?? [];
+      const map = new Map<string, LotSelectedSubItem>(current.map((s) => [`${s.parentId}::${s.rowIndex}`, s]));
+      const rows = parent.items && parent.items.length > 0 ? parent.items : [{ description: parent.parentName, condition: '', make: '' } as ItemRow];
+      rows.forEach((row, idx) => {
+        const key = `${parent.id}::${idx}`;
+        if (checked) {
+          map.set(key, { parentId: parent.id, parentName: parent.parentName, rowIndex: idx, row });
+        } else {
+          map.delete(key);
+        }
+      });
+      const next = Array.from(map.values());
+      return { ...prev, selectedSubItems: next, itemCount: next.length };
+    });
+  };
+
   const openItemModal = (item?: Item) => {
     setEditingIds((prev) => ({ ...prev, item: item?.id }));
-    setItemForm(
-      item || {
-        parentName: '',
-        subItemsCount: 0,
-        dateFound: '',
-      }
-    );
+    setItemRows(item?.items && item.items.length > 0 ? item.items : [emptyItemRow()]);
     setItemModalOpen(true);
   };
 
   const saveItem = () => {
-    if (!itemForm.parentName) return;
+    const cleaned = itemRows
+      .map((r) => ({
+        ...r,
+        itemNo: (r.itemNo ?? '').toString().trim(),
+        srNo: (r.srNo ?? '').toString().trim(),
+        description: (r.description ?? '').toString().trim(),
+        condition: (r.condition ?? '').toString().trim(),
+        make: (r.make ?? '').toString().trim(),
+        makeNo: (r.makeNo ?? '').toString().trim(),
+        qty: Number.isFinite(Number(r.qty)) ? Number(r.qty) : 0,
+      }))
+      .filter((r) =>
+        [r.itemNo, r.srNo, r.description, String(r.qty || ''), r.condition, r.make, r.makeNo].some(
+          (v) => String(v).trim() !== ''
+        )
+      );
+
+    if (cleaned.length === 0) {
+      alert('Please add at least one row (or import from Excel).');
+      return;
+    }
+    if (cleaned.some((r) => !r.description)) {
+      alert('Description is required for each row.');
+      return;
+    }
+
+    let parentName = cleaned.map((r) => r.description).filter(Boolean).join(', ');
+    if (!parentName) parentName = 'Parent Item';
+    if (parentName.length > 60) parentName = parentName.slice(0, 57) + '...';
+    const subItemsCount = cleaned.length;
+
     if (editingIds.item) {
-      setItems((prev) => prev.map((it) => (it.id === editingIds.item ? { ...it, ...itemForm } as Item : it)));
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === editingIds.item
+            ? ({
+                ...it,
+                parentName,
+                subItemsCount,
+                items: cleaned,
+              } as Item)
+            : it
+        )
+      );
     } else {
       setItems((prev) => [
         ...prev,
-        { ...(itemForm as Item), id: genId('#I'), subItemsCount: itemForm.subItemsCount || 0 },
+        {
+          id: genId('#I'),
+          parentName,
+          subItemsCount,
+          items: cleaned,
+          dateFound: new Date().toISOString().slice(0, 10),
+        },
       ]);
     }
     setItemModalOpen(false);
+  };
+
+  const parseExcelToRows = async (file: File): Promise<ItemRow[]> => {
+    const buf = await file.arrayBuffer();
+    // dynamic import keeps bundle lighter and avoids importing unless needed
+    const XLSX = await import('xlsx');
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const grid = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, raw: false }) as any[][];
+    if (!grid || grid.length === 0) return [];
+
+    const norm = (v: any) => String(v ?? '').trim().toLowerCase();
+    const headerRowIdx = Math.max(
+      0,
+      grid.findIndex((row) => row?.some((c) => ['description', 'qty', 'quantity', 'sr'].some((k) => norm(c).includes(k))))
+    );
+    const header = (grid[headerRowIdx] ?? []).map(norm);
+
+    const col = (aliases: string[]) => {
+      const idx = header.findIndex((h) => aliases.some((a) => h === a || h.includes(a)));
+      return idx >= 0 ? idx : -1;
+    };
+
+    const idxItemNo = col(['item no', 'item no.', 'item number', 'item']);
+    const idxSr = col(['sr #', 'sr#', 'sr no', 'sr no.', 'serial', 'serial number']);
+    const idxDesc = col(['description', 'desc']);
+    const idxQty = col(['qty', 'qty.', 'quantity']);
+    const idxCond = col(['condition', 'nature/condition', 'nature']);
+    const idxMake = col(['make', 'make of item', 'trade mark', 'trademark']);
+    const idxMakeNo = col(['make no', 'make no.', 'identification', 'make no (identification)']);
+
+    const dataStart = headerRowIdx + 1;
+    const rows = grid.slice(dataStart).map((r) => {
+      const byIndex = (i: number, fallbackIndex: number) => {
+        const idx = i >= 0 ? i : fallbackIndex;
+        return String(r?.[idx] ?? '').trim();
+      };
+      const qtyStr = idxQty >= 0 ? r?.[idxQty] : r?.[3];
+      const qty = Number(String(qtyStr ?? '').trim()) || 0;
+      return {
+        itemNo: byIndex(idxItemNo, 0),
+        srNo: byIndex(idxSr, 1),
+        description: byIndex(idxDesc, 2),
+        qty,
+        condition: byIndex(idxCond, 4),
+        make: byIndex(idxMake, 5),
+        makeNo: byIndex(idxMakeNo, 6),
+      } as ItemRow;
+    });
+
+    return rows.filter((r) =>
+      [r.itemNo, r.srNo, r.description, String(r.qty || ''), r.condition, r.make, r.makeNo].some((v) => String(v).trim() !== '')
+    );
   };
 
   const openUserModal = (user?: User) => {
@@ -631,7 +798,6 @@ export default function AdminDashboard() {
                     <th>Name</th>
                     <th>Items</th>
                     <th>Base Price</th>
-                    <th>Auction</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -642,7 +808,6 @@ export default function AdminDashboard() {
                       <td>{l.lotName}</td>
                       <td>{l.itemCount}</td>
                       <td>{(l.basePrice ?? 0).toLocaleString()}</td>
-                      <td>{l.assignedAuction || '—'}</td>
                       <td>
                         <button className="action-btn btn-edit" onClick={() => openLotModal(l)}>
                           Edit
@@ -675,7 +840,6 @@ export default function AdminDashboard() {
                     <th>ID</th>
                     <th>Name</th>
                     <th>Sub Items</th>
-                    <th>Date Found</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -684,8 +848,7 @@ export default function AdminDashboard() {
                     <tr key={it.id}>
                       <td>{it.id}</td>
                       <td>{it.parentName}</td>
-                      <td>{it.subItemsCount}</td>
-                      <td>{it.dateFound}</td>
+                      <td>{it.items?.length ?? it.subItemsCount ?? 0}</td>
                       <td>
                         <button className="action-btn btn-edit" onClick={() => openItemModal(it)}>
                           Edit
@@ -869,6 +1032,15 @@ export default function AdminDashboard() {
       >
         <div className="form-row">
           <div className="form-group">
+            <label>Lot ID</label>
+            <input
+              value={lotForm.id || ''}
+              onChange={(e) => setLotForm({ ...lotForm, id: e.target.value })}
+              placeholder="Enter Lot ID (e.g. #L-001)"
+              disabled={!!editingIds.lot}
+            />
+          </div>
+          <div className="form-group">
             <label>Lot Name</label>
             <input
               value={lotForm.lotName || ''}
@@ -891,9 +1063,9 @@ export default function AdminDashboard() {
             <label>Item Count</label>
             <input
               type="number"
-              min={1}
-              value={lotForm.itemCount || 1}
-              onChange={(e) => setLotForm({ ...lotForm, itemCount: parseInt(e.target.value) || 1 })}
+              min={0}
+              value={lotForm.selectedSubItems?.length ?? lotForm.itemCount ?? 0}
+              readOnly
             />
           </div>
           <div className="form-group">
@@ -906,19 +1078,115 @@ export default function AdminDashboard() {
             />
           </div>
           <div className="form-group">
-            <label>Assigned Auction</label>
-            <select
-              value={lotForm.assignedAuction || ''}
-              onChange={(e) => setLotForm({ ...lotForm, assignedAuction: e.target.value })}
+            <label>Items</label>
+            <button
+              type="button"
+              className="action-btn btn-create"
+              style={{ width: '100%', justifyContent: 'center' }}
+              onClick={() => setLotItemsModalOpen(true)}
             >
-              <option value="">Unassigned</option>
-              {auctions.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.auctionName}
-                </option>
-              ))}
-            </select>
+              Add Items ({lotForm.selectedSubItems?.length ?? 0})
+            </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={lotItemsModalOpen}
+        title="Add Items"
+        onClose={() => setLotItemsModalOpen(false)}
+        width="1100px"
+        footer={
+          <>
+            <button className="btn-cancel" onClick={() => setLotItemsModalOpen(false)}>
+              Cancel
+            </button>
+            <button className="btn-next" onClick={() => setLotItemsModalOpen(false)}>
+              Done
+            </button>
+          </>
+        }
+      >
+        <input
+          className="search-input"
+          placeholder="Search items by name, description, or ID..."
+          value={lotItemsSearch}
+          onChange={(e) => setLotItemsSearch(e.target.value)}
+        />
+
+        <div className="items-hierarchy-container">
+          {items
+            .filter((p) => {
+              const q = lotItemsSearch.trim().toLowerCase();
+              if (!q) return true;
+              const parentHit =
+                (p.id ?? '').toLowerCase().includes(q) || (p.parentName ?? '').toLowerCase().includes(q);
+              const rows = p.items && p.items.length > 0 ? p.items : [];
+              const rowHit = rows.some((r) => (r.description ?? '').toLowerCase().includes(q));
+              return parentHit || rowHit;
+            })
+            .map((parent) => {
+              const rows =
+                parent.items && parent.items.length > 0
+                  ? parent.items
+                  : ([{ description: parent.parentName, condition: '', make: '' } as ItemRow] as ItemRow[]);
+              const selectedCountForParent = rows.reduce(
+                (acc, _r, idx) => (lotSelectedMap.has(`${parent.id}::${idx}`) ? acc + 1 : acc),
+                0
+              );
+              const parentChecked = selectedCountForParent > 0 && selectedCountForParent === rows.length;
+              return (
+                <div key={parent.id} className="parent-item-group" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                      type="checkbox"
+                      checked={parentChecked}
+                      onChange={(e) => setLotParentSelected(parent, e.target.checked)}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <strong>
+                        {parent.id} - {parent.parentName}
+                      </strong>{' '}
+                      <span style={{ opacity: 0.75 }}>
+                        ({selectedCountForParent} sub-items selected)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                    {rows.map((row, idx) => {
+                      const key = `${parent.id}::${idx}`;
+                      const checked = lotSelectedMap.has(key);
+                      const sr = row.srNo || row.serialNumber || `SR #${idx + 1}`;
+                      const qty = row.qty ?? 1;
+                      const condition = row.condition || '—';
+                      const label = row.description || parent.parentName;
+                      return (
+                        <div
+                          key={key}
+                          className="lot-selection-item"
+                          style={{ marginBottom: 0, width: '100%' }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleLotSubItem(parent, row, idx)}
+                          />
+                          <div>
+                            <p style={{ marginBottom: 4 }}>
+                              <strong>{sr}</strong> - {label}
+                            </p>
+                            <p style={{ opacity: 0.8, margin: 0 }}>
+                              Qty: {qty} | Condition: {condition}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </Modal>
 
@@ -936,34 +1204,173 @@ export default function AdminDashboard() {
             </button>
           </>
         }
+        width="1000px"
       >
-        <div className="form-row">
-          <div className="form-group">
-            <label>Item Name</label>
-            <input
-              value={itemForm.parentName || ''}
-              onChange={(e) => setItemForm({ ...itemForm, parentName: e.target.value })}
-            />
-          </div>
-          <div className="form-group">
-            <label>Sub Items Count</label>
-            <input
-              type="number"
-              min={0}
-              value={itemForm.subItemsCount || 0}
-              onChange={(e) =>
-                setItemForm({ ...itemForm, subItemsCount: parseInt(e.target.value) || 0 })
+        <div className="excel-import-section">
+          <button
+            type="button"
+            className="btn-excel-import"
+            onClick={() => itemExcelInputRef.current?.click()}
+          >
+            <i className="fas fa-file-excel" />
+            Add items from Excel
+          </button>
+          <input
+            ref={itemExcelInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const rows = await parseExcelToRows(file);
+                setItemRows(rows.length > 0 ? rows : [emptyItemRow()]);
+              } catch (err) {
+                console.error(err);
+                alert('Could not read the Excel file. Please check the format and try again.');
+              } finally {
+                // allow re-uploading same file
+                e.target.value = '';
               }
-            />
+            }}
+          />
+        </div>
+
+        <div className="manual-entry-section">
+          <div className="section-title">Enter Item Information Manually</div>
+          <div className="excel-table-container">
+            <table className="excel-table">
+              <thead>
+                <tr>
+                  <th>ITEM NO.</th>
+                  <th>SR #</th>
+                  <th>DESCRIPTION</th>
+                  <th>QTY.</th>
+                  <th>NATURE/CONDITION OF ITEM</th>
+                  <th>MAKE OF ITEM (TRADE MARK)</th>
+                  <th>MAKE NO. (IDENTIFICATION)</th>
+                  <th className="action-col">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itemRows.map((row, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <input
+                        className="excel-input"
+                        value={row.itemNo}
+                        onChange={(e) => {
+                          const next = [...itemRows];
+                          next[idx] = { ...next[idx], itemNo: e.target.value };
+                          setItemRows(next);
+                        }}
+                        placeholder="Item No."
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="excel-input"
+                        value={row.srNo}
+                        onChange={(e) => {
+                          const next = [...itemRows];
+                          next[idx] = { ...next[idx], srNo: e.target.value };
+                          setItemRows(next);
+                        }}
+                        placeholder="SR #"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="excel-input"
+                        value={row.description}
+                        onChange={(e) => {
+                          const next = [...itemRows];
+                          next[idx] = { ...next[idx], description: e.target.value };
+                          setItemRows(next);
+                        }}
+                        placeholder="Description"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="excel-input"
+                        type="number"
+                        min={0}
+                        value={row.qty}
+                        onChange={(e) => {
+                          const next = [...itemRows];
+                          next[idx] = { ...next[idx], qty: Number(e.target.value) || 0 };
+                          setItemRows(next);
+                        }}
+                        placeholder="Qty"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="excel-input"
+                        value={row.condition}
+                        onChange={(e) => {
+                          const next = [...itemRows];
+                          next[idx] = { ...next[idx], condition: e.target.value };
+                          setItemRows(next);
+                        }}
+                        placeholder="Select condition"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="excel-input"
+                        value={row.make}
+                        onChange={(e) => {
+                          const next = [...itemRows];
+                          next[idx] = { ...next[idx], make: e.target.value };
+                          setItemRows(next);
+                        }}
+                        placeholder="Make"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="excel-input"
+                        value={row.makeNo}
+                        onChange={(e) => {
+                          const next = [...itemRows];
+                          next[idx] = { ...next[idx], makeNo: e.target.value };
+                          setItemRows(next);
+                        }}
+                        placeholder="Make No."
+                      />
+                    </td>
+                    <td className="action-col">
+                      <button
+                        type="button"
+                        className="btn-remove-row"
+                        aria-label="Remove row"
+                        onClick={() => {
+                          if (itemRows.length <= 1) {
+                            alert('Must have at least one row.');
+                            return;
+                          }
+                          setItemRows(itemRows.filter((_, i) => i !== idx));
+                        }}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="form-group">
-            <label>Date Found</label>
-            <input
-              type="date"
-              value={itemForm.dateFound || ''}
-              onChange={(e) => setItemForm({ ...itemForm, dateFound: e.target.value })}
-            />
-          </div>
+
+          <button
+            type="button"
+            className="btn-add-row"
+            onClick={() => setItemRows((prev) => [...prev, emptyItemRow()])}
+          >
+            <i className="fas fa-plus" /> Add Row
+          </button>
         </div>
       </Modal>
 

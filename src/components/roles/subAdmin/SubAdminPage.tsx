@@ -11,16 +11,17 @@ import { Sidebar } from '@/components/layout/Sidebar';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function UtilityBar() {
   // Initialize state from localStorage to avoid setState in effect
-  const getInitialDarkMode = () => localStorage.getItem('theme') === 'dark';
-  const getInitialSound = () => localStorage.getItem('soundEnabled') !== 'false';
-  const getInitialLang = () => localStorage.getItem('language') || 'EN';
+  const safeGet = (key: string) => (typeof window !== 'undefined' ? localStorage.getItem(key) : null);
+  const getInitialDarkMode = () => safeGet('theme') === 'dark';
+  const getInitialSound = () => safeGet('soundEnabled') !== 'false';
+  const getInitialLang = () => safeGet('language') || 'EN';
 
   const [currentDate, setCurrentDate] = useState('');
   const [currentTime, setCurrentTime] = useState('');
   const { isDark, toggleTheme } = useTheme();
   const [isDarkMode, setIsDarkMode] = useState(isDark);
-  const [isSoundEnabled, setIsSoundEnabled] = useState(getInitialSound());
-  const [currentLang, setCurrentLang] = useState(getInitialLang());
+  const [isSoundEnabled, setIsSoundEnabled] = useState(() => getInitialSound());
+  const [currentLang, setCurrentLang] = useState(() => getInitialLang());
   const [temperature, setTemperature] = useState(0);
 
   // Define fetchWeather early to use in useEffect
