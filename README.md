@@ -2,6 +2,17 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Database (Postgres)
+
+The API routes under `src/app/api/*` connect to Postgres using either:
+
+- `DATABASE_URL` (recommended), or
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
+
+1) Create `.env.local` in the project root (you can start from `env.local.example`).
+
+2) Restart the dev server after changing env vars.
+
 First, run the development server:
 
 ```bash

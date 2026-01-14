@@ -22,22 +22,29 @@ const Modal: React.FC<{
   width?: string;
 }> = ({ open, title, onClose, children, footer, width = '600px' }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', handleKey);
-    // focus first focusable element
-    const focusable = containerRef.current?.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    focusable?.focus();
+    // focus first focusable element (only when opening)
+    requestAnimationFrame(() => {
+      const focusable = containerRef.current?.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      focusable?.focus();
+    });
     return () => {
       document.removeEventListener('keydown', handleKey);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (
@@ -139,6 +146,24 @@ export default function AdminDashboard() {
   const [textSize, setTextSize] = useState(1);
   const { isDark, toggleTheme } = useTheme();
 
+  const loadItemsFromDb = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/items', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Failed to load items (${res.status})`);
+      const next: Item[] = (Array.isArray(data) ? data : []).map((r: any) => ({
+        id: String(r?.id ?? ''),
+        parentName: String(r?.parentName ?? r?.name ?? ''),
+        subItemsCount: Number(r?.subItemsCount ?? r?.sub_item ?? 0) || 0,
+        items: Array.isArray(r?.items) ? r.items : undefined,
+      }));
+      setItems(next.filter((x) => x.id && x.parentName));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
@@ -186,12 +211,17 @@ export default function AdminDashboard() {
         { id: '#L-002', lotName: 'Bulk Winter Wear (15 Coats)', lotType: 'general', itemCount: 15, basePrice: 1000, assignedAuction: '#A-001' },
       ])
     );
-    setItems(
-      storage.getJSON<Item[]>(StorageKeys.auctionItems, [
-        { id: '#00123', parentName: 'Black Check-in Trolley Bag', subItemsCount: 4, dateFound: '2025-10-25' },
-        { id: '#00124', parentName: 'Apple MacBook Pro (Stand-alone)', subItemsCount: 0, dateFound: '2025-10-26' },
-      ])
-    );
+    // Prefer DB items; fallback to local storage sample data for first-time setup.
+    void (async () => {
+      const ok = await loadItemsFromDb();
+      if (ok) return;
+      setItems(
+        storage.getJSON<Item[]>(StorageKeys.auctionItems, [
+          { id: '#00123', parentName: 'Black Check-in Trolley Bag', subItemsCount: 4, dateFound: '2025-10-25' },
+          { id: '#00124', parentName: 'Apple MacBook Pro (Stand-alone)', subItemsCount: 0, dateFound: '2025-10-26' },
+        ])
+      );
+    })();
     setUsers(
       storage.getJSON<User[]>(StorageKeys.auctionUsers, [
         { id: '1001', name: 'Ali Khan', cnic: '42101-1234567-3', paa: 'PAA-1234', status: 'Enabled', role: 'Bidder' },
@@ -401,7 +431,7 @@ export default function AdminDashboard() {
     setItemModalOpen(true);
   };
 
-  const saveItem = () => {
+  const saveItem = async () => {
     const cleaned = itemRows
       .map((r) => ({
         ...r,
@@ -433,32 +463,30 @@ export default function AdminDashboard() {
     if (parentName.length > 60) parentName = parentName.slice(0, 57) + '...';
     const subItemsCount = cleaned.length;
 
-    if (editingIds.item) {
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === editingIds.item
-            ? ({
-                ...it,
-                parentName,
-                subItemsCount,
-                items: cleaned,
-              } as Item)
-            : it
-        )
-      );
-    } else {
-      setItems((prev) => [
-        ...prev,
-        {
-          id: genId('#I'),
-          parentName,
-          subItemsCount,
-          items: cleaned,
-          dateFound: new Date().toISOString().slice(0, 10),
-        },
-      ]);
+    try {
+      if (editingIds.item) {
+        const res = await fetch(`/api/items/${encodeURIComponent(editingIds.item)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentName, subItemsCount, rows: cleaned }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `Failed to update item (${res.status})`);
+      } else {
+        const res = await fetch('/api/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentName, subItemsCount, rows: cleaned }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `Failed to create item (${res.status})`);
+      }
+
+      await loadItemsFromDb();
+      setItemModalOpen(false);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to save item to database');
     }
-    setItemModalOpen(false);
   };
 
   const parseExcelToRows = async (file: File): Promise<ItemRow[]> => {
@@ -542,7 +570,21 @@ export default function AdminDashboard() {
   const deleteRow = (type: 'auction' | 'lot' | 'item' | 'user', id: string) => {
     if (type === 'auction') setAuctions((p) => p.filter((x) => x.id !== id));
     if (type === 'lot') setLots((p) => p.filter((x) => x.id !== id)); 
-    if (type === 'item') setItems((p) => p.filter((x) => x.id !== id));
+    if (type === 'item') {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/items/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error((data as any)?.error || `Failed to delete item (${res.status})`);
+          }
+          await loadItemsFromDb();
+        } catch (e: any) {
+          alert(e?.message || 'Failed to delete item from database');
+        }
+      })();
+      return;
+    }
     if (type === 'user') setUsers((p) => p.filter((x) => x.id !== id));
   };
 

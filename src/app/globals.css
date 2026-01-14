@@ -2019,7 +2019,8 @@ body.dark-mode .live-status-badge.is-paused {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  padding-top: 22px;
+  /* Match modal-body horizontal padding and give bottom breathing room */
+  padding: 18px 26px 22px;
   border-top: 2px solid var(--border-color);
   margin-top: 20px;
   background: var(--surface-1);
