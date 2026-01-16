@@ -2,7 +2,11 @@ import { getPool } from '../../../../../lib/db';
 
 export const runtime = 'nodejs';
 
-function parseId(params) {
+async function getParams(ctx) {
+  return await Promise.resolve(ctx?.params);
+}
+
+function parseIdFromParams(params) {
   const raw = String(params?.id ?? '');
   const m = raw.match(/-?\d+/);
   const id = m ? Number(m[0]) : NaN;
@@ -17,8 +21,9 @@ function parseIntStrict(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function PUT(req, { params }) {
-  const itemNo = parseId(params);
+export async function PUT(req, ctx) {
+  const params = await getParams(ctx);
+  const itemNo = parseIdFromParams(params);
   if (itemNo === null) return Response.json({ error: 'Invalid item no' }, { status: 400 });
 
   try {
@@ -70,8 +75,9 @@ export async function PUT(req, { params }) {
   }
 }
 
-export async function DELETE(_req, { params }) {
-  const itemNo = parseId(params);
+export async function DELETE(_req, ctx) {
+  const params = await getParams(ctx);
+  const itemNo = parseIdFromParams(params);
   if (itemNo === null) return Response.json({ error: 'Invalid item no' }, { status: 400 });
 
   try {

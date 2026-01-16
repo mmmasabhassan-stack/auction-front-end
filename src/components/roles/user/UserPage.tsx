@@ -57,6 +57,7 @@ export default function UserDashboard() {
   const [bids, setBids] = useState<Bid[]>([]);
   const [won, setWon] = useState<Won[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [userId, setUserId] = useState<string>('1001');
 
   const [pagination, setPagination] = useState({
     active: 1,
@@ -73,45 +74,174 @@ export default function UserDashboard() {
   const [selectedAuction, setSelectedAuction] = useState<Auction | null>(null);
   const [selectedLot, setSelectedLot] = useState<string | null>(null);
   const [bidAmount, setBidAmount] = useState<number>(0);
+  const [lotOptions, setLotOptions] = useState<
+    { id: string; lotName: string; itemCount: number; basePrice: number }[]
+  >([]);
+  const [lotsLoading, setLotsLoading] = useState(false);
+  const [lotsError, setLotsError] = useState<string>('');
   const { isDark, toggleTheme } = useTheme();
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [currentDate, setCurrentDate] = useState('--');
   const [currentTime, setCurrentTime] = useState('--');
 
-  // Load data
   useEffect(() => {
-    setAuctions(
-      storage.getJSON<Auction[]>('user_auctions', [
-        { id: 'A-001', name: 'Costly Items Auction Q1 2026', dateTime: '2026-03-10 | 11:00 AM', lots: 35, status: 'live' },
-        { id: 'A-002', name: 'Winter Wear Auction', dateTime: '2026-03-25 | 02:00 PM', lots: 20, status: 'scheduled' },
-        { id: 'A-003', name: 'Electronics Clearance', dateTime: '2026-03-30 | 04:00 PM', lots: 15, status: 'ended' },
-      ])
-    );
-    setBids(
-      storage.getJSON<Bid[]>('user_bids', [
-        { id: 'B-1', auction: 'Costly Items Auction Q1 2026', lot: '#L-001', myBid: 12000, highest: 15000, status: 'outbid' },
-        { id: 'B-2', auction: 'Winter Wear Auction', lot: '#L-010', myBid: 5000, highest: 5000, status: 'winning' },
-      ])
-    );
-    setWon(
-      storage.getJSON<Won[]>('user_won', [
-        { id: 'W-1', auction: 'Gadgets Auction', lot: '#L-020', winningBid: 25000, status: 'payment' },
-      ])
-    );
-    setNotifications(
-      storage.getJSON<Notification[]>('user_notifications', [
-        { id: 'N-1', type: 'bid', message: 'You have been outbid on #L-001', lot: '#L-001', date: '2026-01-05', status: 'unread' },
-        { id: 'N-2', type: 'system', message: 'New auction added: Winter Wear Auction', date: '2026-01-04', status: 'read' },
-      ])
-    );
+    // Temporary auth: use a stored user id, fallback to 1001.
+    const id = typeof window !== 'undefined' ? String(localStorage.getItem('userId') ?? '').trim() : '';
+    if (id) setUserId(id);
   }, []);
 
-  // Persist
+  const formatUserDateTime = (date: string, time24: string): string => {
+    const d = String(date ?? '').trim();
+    const t = String(time24 ?? '').trim();
+    if (!d || !t) return '';
+    // date is already YYYY-MM-DD in our admin flow
+    const [hhRaw, mmRaw = '00'] = t.split(':');
+    const hh = Number(hhRaw);
+    const mm = Number(mmRaw);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return `${d} | ${t}`;
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    const hh12 = ((hh + 11) % 12) + 1;
+    return `${d} | ${String(hh12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${ampm}`;
+  };
+
+  const computeUserStatus = (auctionDate: string, startTime: string, endTime: string): Auction['status'] => {
+    const d = String(auctionDate ?? '').trim();
+    const s = String(startTime ?? '').trim();
+    const e = String(endTime ?? '').trim();
+    if (!d || !s) return 'scheduled';
+    const start = new Date(`${d}T${s}:00`);
+    const end = e ? new Date(`${d}T${e}:00`) : null;
+    const now = new Date();
+    if (Number.isNaN(start.getTime())) return 'scheduled';
+    if (now < start) return 'scheduled';
+    if (end && !Number.isNaN(end.getTime()) && now > end) return 'ended';
+    return 'live';
+  };
+
+  const loadAuctionsFromDb = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/auctions', { cache: 'no-store' });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && typeof data === 'object' && 'error' in data && typeof (data as any).error === 'string') ? (data as any).error : `Failed to load auctions (${res.status})`);
+
+      const rows = Array.isArray(data) ? data : [];
+      const next: Auction[] = rows
+        .map((r: unknown) => {
+          const obj = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+          const id = String(obj.id ?? '').trim();
+          const name = String(obj.auctionName ?? '').trim();
+          const auctionDate = String(obj.auctionDate ?? '').trim();
+          const startTime = String(obj.startTime ?? '').trim();
+          const endTime = String(obj.endTime ?? '').trim();
+          const lotsCount = Number(obj.lotsCount ?? 0) || 0;
+          const lotIds = Array.isArray(obj.lotIds) ? (obj.lotIds as unknown[]).map((x) => String(x ?? '').trim()).filter(Boolean) : [];
+
+          if (!id || !name) return null;
+          return {
+            id,
+            name,
+            dateTime: formatUserDateTime(auctionDate, startTime),
+            lots: lotsCount,
+            status: computeUserStatus(auctionDate, startTime, endTime),
+            lotIds,
+          } as Auction;
+        })
+        .filter(Boolean) as Auction[];
+
+      // Note: /api/auctions returns Draft/Scheduled; for user we show based on time-derived status (live/scheduled/ended).
+      setAuctions(next);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const loadMyBidsFromDb = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/bids?userId=${encodeURIComponent(userId)}`, { cache: 'no-store' });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) return false;
+      const rows = Array.isArray(data) ? data : [];
+      setBids(
+        rows.map((r: any) => ({
+          id: String(r?.lotId ?? r?.lot_id ?? ''),
+          auction: String(r?.auctionName ?? ''),
+          lot: String(r?.lotName ?? r?.lotId ?? ''),
+          myBid: Number(r?.myBid ?? 0) || 0,
+          highest: Number(r?.highest ?? 0) || 0,
+          status: (String(r?.status ?? 'live') as Bid['status']) ?? 'live',
+        }))
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const loadWinsFromDb = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/wins?userId=${encodeURIComponent(userId)}`, { cache: 'no-store' });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) return false;
+      const rows = Array.isArray(data) ? data : [];
+      setWon(
+        rows.map((r: any) => ({
+          id: String(r?.id ?? ''),
+          auction: String(r?.auction ?? ''),
+          lot: String(r?.lot ?? ''),
+          winningBid: Number(r?.winningBid ?? 0) || 0,
+          status: (String(r?.status ?? 'payment') as Won['status']) ?? 'payment',
+        }))
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const loadNotificationsFromDb = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/notifications?userId=${encodeURIComponent(userId)}`, { cache: 'no-store' });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) return false;
+      const rows = Array.isArray(data) ? data : [];
+      setNotifications(
+        rows.map((r: any) => ({
+          id: String(r?.id ?? ''),
+          type: (String(r?.type ?? 'system') as Notification['type']) ?? 'system',
+          message: String(r?.message ?? ''),
+          lot: r?.entityType === 'lot' ? String(r?.entityId ?? '') : undefined,
+          date: String(r?.date ?? ''),
+          status: (String(r?.status ?? 'unread') as Notification['status']) ?? 'unread',
+        }))
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Load data
+  useEffect(() => {
+    void (async () => {
+      const ok = await loadAuctionsFromDb();
+      if (ok) return;
+      setAuctions(
+        storage.getJSON<Auction[]>('user_auctions', [
+          { id: 'A-001', name: 'Costly Items Auction Q1 2026', dateTime: '2026-03-10 | 11:00 AM', lots: 35, status: 'live' },
+          { id: 'A-002', name: 'Winter Wear Auction', dateTime: '2026-03-25 | 02:00 PM', lots: 20, status: 'scheduled' },
+          { id: 'A-003', name: 'Electronics Clearance', dateTime: '2026-03-30 | 04:00 PM', lots: 15, status: 'ended' },
+        ])
+      );
+    })();
+    void loadMyBidsFromDb();
+    void loadWinsFromDb();
+    void loadNotificationsFromDb();
+  }, [userId]);
+
+  // Persist (keep auctions cached for offline fallback; bids/wins/notifs are DB-backed)
   useEffect(() => storage.setJSON('user_auctions', auctions), [auctions]);
-  useEffect(() => storage.setJSON('user_bids', bids), [bids]);
-  useEffect(() => storage.setJSON('user_won', won), [won]);
-  useEffect(() => storage.setJSON('user_notifications', notifications), [notifications]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -162,29 +292,100 @@ export default function UserDashboard() {
     setSelectedAuction(auction);
     setSelectedLot(null);
     setBidAmount(0);
+    setLotOptions([]);
+    setLotsError('');
     setBiddingModalOpen(true);
+
+    void (async () => {
+      try {
+        setLotsLoading(true);
+        const res = await fetch('/api/lots', { cache: 'no-store' });
+        const data: unknown = await res.json().catch(() => null);
+        if (!res.ok) {
+          const msg =
+            data && typeof data === 'object' && 'error' in data && typeof (data as any).error === 'string'
+              ? (data as any).error
+              : `Failed to load lots (${res.status})`;
+          throw new Error(msg);
+        }
+
+        const rows = Array.isArray(data) ? data : [];
+        const allowedLotIds = Array.isArray((auction as any)?.lotIds) ? (auction as any).lotIds as string[] : [];
+        const allowedSet = new Set(allowedLotIds.map((x) => String(x ?? '').trim()).filter(Boolean));
+        const mapped = rows
+          .map((r: unknown) => {
+            const obj = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+            const assignedAuction = String(obj.assignedAuction ?? '').trim();
+            const id = String(obj.id ?? '').trim();
+            const lotName = String(obj.lotName ?? '').trim();
+            const itemCount = Number(obj.itemCount ?? 0) || 0;
+            const basePrice = Number(obj.basePrice ?? 0) || 0;
+            if (!id || !lotName) return null;
+            // Prefer explicit lotIds (from /api/auctions) when available; fallback to assignedAuction.
+            if (allowedSet.size > 0) {
+              if (!allowedSet.has(id)) return null;
+            } else {
+              if (assignedAuction !== auction.id) return null;
+            }
+            return { id, lotName, itemCount, basePrice };
+          })
+          .filter(Boolean) as { id: string; lotName: string; itemCount: number; basePrice: number }[];
+
+        setLotOptions(mapped);
+        // Auto-select when there's exactly one lot.
+        if (mapped.length === 1) setSelectedLot(mapped[0].id);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to load lots';
+        setLotsError(msg);
+      } finally {
+        setLotsLoading(false);
+      }
+    })();
   };
 
   const placeBid = () => {
     if (!selectedAuction || !selectedLot) return;
-    setBids((prev) => [
-      ...prev,
-      {
-        id: `B-${Date.now()}`,
-        auction: selectedAuction.name,
-        lot: selectedLot,
-        myBid: bidAmount,
-        highest: bidAmount,
-        status: 'winning',
-      },
-    ]);
-    setBidAmount(0);
-    setSelectedLot(null);
-    setBiddingModalOpen(false);
+    if (selectedAuction.status !== 'live') return;
+    if (bidAmount <= 0) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/bids', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            auctionId: selectedAuction.id,
+            lotId: selectedLot,
+            amount: bidAmount,
+          }),
+        });
+        const data: any = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(String(data?.error ?? `Failed to place bid (${res.status})`));
+
+        setBidAmount(0);
+        setSelectedLot(null);
+        setBiddingModalOpen(false);
+        await loadMyBidsFromDb();
+        await loadNotificationsFromDb();
+      } catch (e: any) {
+        alert(String(e?.message ?? 'Failed to place bid'));
+      }
+    })();
   };
 
   const markNotification = (id: string, status: 'read' | 'unread') => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, status } : n)));
+    void (async () => {
+      try {
+        await fetch(`/api/notifications/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+      } catch {
+        // ignore
+      }
+    })();
   };
 
   return (
@@ -319,8 +520,12 @@ export default function UserDashboard() {
                         <td>{a.lots}</td>
                         <td>{a.status}</td>
                         <td>
-                          <button className="action-btn btn-success" onClick={() => openBidding(a)}>
-                            Bid
+                          <button
+                            className="action-btn btn-success"
+                            onClick={() => openBidding(a)}
+                            title={a.status !== 'live' ? 'View lots (bidding opens when the auction is live)' : 'Bid'}
+                          >
+                            {a.status === 'live' ? 'Bid' : 'View'}
                           </button>
                         </td>
                       </tr>
@@ -606,23 +811,62 @@ export default function UserDashboard() {
         onClose={() => setBiddingModalOpen(false)}
         footer={
           <>
-            <button className="btn-cancel" onClick={() => setBiddingModalOpen(false)}>
+            <button className="action-btn btn-delete" onClick={() => setBiddingModalOpen(false)}>
               Cancel
             </button>
-            <button className="btn-next" disabled={!selectedLot || bidAmount <= 0} onClick={placeBid}>
+            <button
+              className="action-btn btn-success"
+              disabled={!selectedAuction || selectedAuction.status !== 'live' || !selectedLot || bidAmount <= 0}
+              onClick={placeBid}
+              title={
+                !selectedAuction
+                  ? 'Select an auction'
+                  : selectedAuction.status !== 'live'
+                    ? 'Auction is not live'
+                    : !selectedLot
+                      ? 'Select a lot'
+                      : bidAmount <= 0
+                        ? 'Enter a bid amount'
+                        : 'Place bid'
+              }
+            >
               Place Bid
             </button>
           </>
         }
       >
+        {selectedAuction && (
+          <div style={{ marginBottom: 12 }}>
+            <span className="live-detail">
+              Status: <strong>{selectedAuction.status}</strong> · Lots: <strong>{selectedAuction.lots}</strong>
+            </span>
+            {selectedAuction.status !== 'live' && (
+              <p className="live-detail" style={{ margin: '6px 0 0 0' }}>
+                Bidding is only available when the auction is <strong>live</strong>. You can still view lots here.
+              </p>
+            )}
+          </div>
+        )}
         <div className="form-row">
           <div className="form-group">
             <label>Select Lot</label>
-            <select value={selectedLot || ''} onChange={(e) => setSelectedLot(e.target.value)}>
+            <select
+              value={selectedLot || ''}
+              onChange={(e) => setSelectedLot(e.target.value)}
+              disabled={lotsLoading || !selectedAuction}
+            >
               <option value="">-- Choose a lot --</option>
-              <option value="#L-001">#L-001 Sample Lot</option>
-              <option value="#L-002">#L-002 Sample Lot</option>
+              {lotOptions.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.lotName}
+                </option>
+              ))}
             </select>
+            {lotsLoading && <p className="live-detail">Loading lots…</p>}
+            {!lotsLoading && !lotsError && selectedAuction && lotOptions.length === 0 && (
+              <p className="live-detail">No lots are assigned to this auction yet.</p>
+            )}
+            {lotsError && <p className="live-detail" style={{ color: '#dc3545' }}>{lotsError}</p>}
           </div>
           <div className="form-group">
             <label>Bid Amount (PKR)</label>
@@ -632,10 +876,31 @@ export default function UserDashboard() {
               step={100}
               value={bidAmount}
               onChange={(e) => setBidAmount(parseInt(e.target.value) || 0)}
+              disabled={!selectedAuction || selectedAuction.status !== 'live' || !selectedLot}
             />
           </div>
         </div>
-        <p className="page-subtitle">This is a demo bid flow with local state only.</p>
+
+        {selectedLot && (
+          (() => {
+            const lot = lotOptions.find((x) => x.id === selectedLot);
+            if (!lot) return null;
+            return (
+              <div style={{ marginTop: 10 }}>
+                <p className="live-detail" style={{ margin: 0 }}>
+                  Lot: <strong>{lot.lotName}</strong>
+                </p>
+                <p className="live-detail" style={{ margin: 0 }}>
+                  ID: {lot.id} · Items: {lot.itemCount.toLocaleString()} · Base Price: {lot.basePrice.toLocaleString()}
+                </p>
+              </div>
+            );
+          })()
+        )}
+
+        <p className="page-subtitle" style={{ marginTop: 12 }}>
+          Tip: choose a lot first, then enter your bid. (Demo bid flow — bids are stored locally for now.)
+        </p>
       </Modal>
     </div>
   );

@@ -105,6 +105,9 @@ export default function AdminDashboard() {
   const [items, setItems] = useState<Item[]>([]);
   const [users, setUsers] = useState<User[]>([]);
 
+  // Live auction controls should run against an explicitly selected auction
+  const [activeLiveAuctionId, setActiveLiveAuctionId] = useState<string>('');
+
   const [auctionForm, setAuctionForm] = useState<Partial<Auction>>({});
   const [auctionDraftId, setAuctionDraftId] = useState<string>('');
   const [auctionLotIds, setAuctionLotIds] = useState<string[]>([]);
@@ -281,6 +284,31 @@ export default function AdminDashboard() {
     }
   };
 
+  const loadUsersFromDb = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/users', { cache: 'no-store' });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(apiErrorFromUnknown(data) || `Failed to load users (${res.status})`);
+
+      const next: User[] = (Array.isArray(data) ? data : []).map((r: unknown) => {
+        const obj = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+        return {
+          id: String(obj.id ?? ''),
+          name: String(obj.name ?? ''),
+          cnic: String(obj.cnic ?? ''),
+          paa: String(obj.paa ?? ''),
+          status: (String(obj.status ?? 'Enabled') as User['status']) ?? 'Enabled',
+          role: String(obj.role ?? 'Bidder'),
+        };
+      });
+
+      setUsers(next.filter((x) => x.id && x.name && x.cnic));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
@@ -347,12 +375,16 @@ export default function AdminDashboard() {
         ])
       );
     })();
-    setUsers(
-      storage.getJSON<User[]>(StorageKeys.auctionUsers, [
-        { id: '1001', name: 'Ali Khan', cnic: '42101-1234567-3', paa: 'PAA-1234', status: 'Enabled', role: 'Bidder' },
-        { id: '1002', name: 'Sara Ahmed', cnic: '42101-9876543-9', paa: 'PAA-5678', status: 'Disabled', role: 'Bidder' },
-      ])
-    );
+    void (async () => {
+      const okUsers = await loadUsersFromDb();
+      if (okUsers) return;
+      setUsers(
+        storage.getJSON<User[]>(StorageKeys.auctionUsers, [
+          { id: '1001', name: 'Ali Khan', cnic: '42101-1234567-3', paa: 'PAA-1234', status: 'Enabled', role: 'Bidder' },
+          { id: '1002', name: 'Sara Ahmed', cnic: '42101-9876543-9', paa: 'PAA-5678', status: 'Disabled', role: 'Bidder' },
+        ])
+      );
+    })();
   }, []);
 
   // Persist
@@ -379,35 +411,107 @@ export default function AdminDashboard() {
     };
   }, [isRunning]);
 
+  const activeLiveAuction = useMemo(() => {
+    if (!activeLiveAuctionId) return null;
+    return auctions.find((a) => a.id === activeLiveAuctionId) ?? null;
+  }, [activeLiveAuctionId, auctions]);
+
+  const liveLots = useMemo(() => {
+    if (!activeLiveAuctionId) return [];
+    return lots.filter((l) => l.assignedAuction === activeLiveAuctionId);
+  }, [activeLiveAuctionId, lots]);
+
+  // Auto-pick an active auction if none is selected yet (prefer Scheduled).
+  useEffect(() => {
+    if (activeLiveAuctionId) return;
+    if (auctions.length === 0) return;
+    const preferred =
+      auctions.find((a) => a.status === 'Scheduled') ??
+      auctions.find((a) => lots.some((l) => l.assignedAuction === a.id)) ??
+      auctions[0];
+    if (preferred) setActiveLiveAuctionId(preferred.id);
+  }, [activeLiveAuctionId, auctions, lots]);
+
+  // When switching active auction, reset live state + adopt its default timer.
+  useEffect(() => {
+    setIsRunning(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimeRemaining(0);
+    setCurrentLotIndex(-1);
+    if (activeLiveAuction?.defaultBidTimer && Number.isFinite(activeLiveAuction.defaultBidTimer)) {
+      setTimerSeconds(Math.max(1, activeLiveAuction.defaultBidTimer));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLiveAuctionId]);
+
   const currentLot = useMemo(() => {
-    if (currentLotIndex < 0 || lots.length === 0) return null;
-    return lots[currentLotIndex % lots.length];
-  }, [currentLotIndex, lots]);
+    if (currentLotIndex < 0 || liveLots.length === 0) return null;
+    return liveLots[currentLotIndex % liveLots.length];
+  }, [currentLotIndex, liveLots]);
 
   const nextLotPreview = useMemo(() => {
-    if (lots.length === 0) return null;
-    const idx = currentLotIndex < 0 ? 0 : (currentLotIndex + 1) % lots.length;
-    return lots[idx];
-  }, [currentLotIndex, lots]);
+    if (liveLots.length === 0) return null;
+    const idx = currentLotIndex < 0 ? 0 : (currentLotIndex + 1) % liveLots.length;
+    return liveLots[idx];
+  }, [currentLotIndex, liveLots]);
 
   const startAuction = () => {
-    if (lots.length === 0) return;
+    if (!activeLiveAuctionId) return;
+    if (liveLots.length === 0) return;
     const startIndex = currentLotIndex === -1 ? 0 : currentLotIndex;
     setCurrentLotIndex(startIndex);
     setTimeRemaining(timerSeconds);
     setIsRunning(true);
+
+    // Persist live state for user-facing "live" status.
+    void fetch('/api/auction-state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        auctionId: activeLiveAuctionId,
+        status: 'live',
+        activeLotId: liveLots[startIndex % liveLots.length]?.id ?? null,
+        bidEndsAt: new Date(Date.now() + timerSeconds * 1000).toISOString(),
+      }),
+    }).catch(() => {});
   };
 
   const pauseAuction = () => {
     setIsRunning(false);
     if (timerRef.current) clearInterval(timerRef.current);
+
+    if (activeLiveAuctionId) {
+      void fetch('/api/auction-state', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auctionId: activeLiveAuctionId,
+          status: 'paused',
+          activeLotId: currentLot?.id ?? null,
+          bidEndsAt: null,
+        }),
+      }).catch(() => {});
+    }
   };
 
   const goNextLot = () => {
-    if (lots.length === 0) return;
-    setCurrentLotIndex((prev) => (prev + 1) % lots.length);
+    if (!activeLiveAuctionId) return;
+    if (liveLots.length === 0) return;
+    setCurrentLotIndex((prev) => (prev < 0 ? 0 : (prev + 1) % liveLots.length));
     setTimeRemaining(timerSeconds);
     setIsRunning(false);
+
+    const nextIdx = currentLotIndex < 0 ? 0 : (currentLotIndex + 1) % liveLots.length;
+    void fetch('/api/auction-state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        auctionId: activeLiveAuctionId,
+        status: 'paused',
+        activeLotId: liveLots[nextIdx]?.id ?? null,
+        bidEndsAt: null,
+      }),
+    }).catch(() => {});
   };
 
   // Helpers
@@ -774,12 +878,37 @@ export default function AdminDashboard() {
 
   const saveUser = () => {
     if (!userForm.name || !userForm.cnic) return;
-    if (editingIds.user) {
-      setUsers((prev) => prev.map((u) => (u.id === editingIds.user ? { ...u, ...userForm } as User : u)));
-    } else {
-      setUsers((prev) => [...prev, { ...(userForm as User), id: genId('#U') }]);
-    }
-    setUserModalOpen(false);
+
+    void (async () => {
+      try {
+        const id = editingIds.user ?? genId('#U');
+        const payload = {
+          id,
+          name: String(userForm.name ?? ''),
+          cnic: String(userForm.cnic ?? ''),
+          paa: String(userForm.paa ?? ''),
+          status: String(userForm.status ?? 'Enabled'),
+          role: String(userForm.role ?? 'Bidder'),
+        };
+
+        const url = editingIds.user ? `/api/users/${encodeURIComponent(id)}` : '/api/users';
+        const method = editingIds.user ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data: unknown = await res.json().catch(() => null);
+          throw new Error(apiErrorFromUnknown(data) || `Failed to save user (${res.status})`);
+        }
+
+        await loadUsersFromDb();
+        setUserModalOpen(false);
+      } catch (e: unknown) {
+        alert(errorMessageFromUnknown(e) || 'Failed to save user to database');
+      }
+    })();
   };
 
   const deleteRow = (type: 'auction' | 'lot' | 'item' | 'user', id: string) => {
@@ -837,7 +966,22 @@ export default function AdminDashboard() {
       })();
       return;
     }
-    if (type === 'user') setUsers((p) => p.filter((x) => x.id !== id));
+    if (type === 'user') {
+      const ok = window.confirm('Delete this user?');
+      if (!ok) return;
+      void (async () => {
+        try {
+          const res = await fetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          if (!res.ok && res.status !== 204) {
+            const data: unknown = await res.json().catch(() => null);
+            throw new Error(apiErrorFromUnknown(data) || `Failed to delete user (${res.status})`);
+          }
+          await loadUsersFromDb();
+        } catch (e: unknown) {
+          alert(errorMessageFromUnknown(e) || 'Failed to delete user from database');
+        }
+      })();
+    }
   };
 
   const paginated = <T,>(data: T[], page: number) => data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -923,10 +1067,45 @@ export default function AdminDashboard() {
 
               <div className="live-control-box">
                 <div className="event-info">
+                  <h3>Active Auction</h3>
+                  <div className="live-auction-picker">
+                    <label className="live-auction-label">Select Auction</label>
+                    <select
+                      className="live-auction-select"
+                      value={activeLiveAuctionId}
+                      onChange={(e) => setActiveLiveAuctionId(e.target.value)}
+                    >
+                      <option value="">-- Select auction --</option>
+                      {auctions.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.auctionName}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="live-auction-detail">
+                      {activeLiveAuction ? (
+                        <span>
+                          ID: {activeLiveAuction.id} · Status: {activeLiveAuction.status} · Lots: {liveLots.length}
+                        </span>
+                      ) : (
+                        <span>Select an auction to run lots.</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <hr />
+
                   <h3>Current Lot</h3>
                   <p className="live-lead">
-                    {currentLot ? `${currentLot.id} - ${currentLot.lotName}` : 'Awaiting start'}
+                    {currentLot ? currentLot.lotName : 'Awaiting start'}
                   </p>
+                  {currentLot && (
+                    <p className="live-detail">
+                      ID: {currentLot.id} · Items: {currentLot.itemCount ?? 0} · Base Price:{' '}
+                      {(currentLot.basePrice ?? 0).toLocaleString()}
+                      {liveLots.length > 0 ? ` · Lot ${currentLotIndex + 1} / ${liveLots.length}` : ''}
+                    </p>
+                  )}
                   <div className="status-line">
                     <span className="status-label">LIVE Status:</span>
                     <span className={`status-pill ${isRunning ? 'pill-live' : 'pill-stopped'}`}>
@@ -946,9 +1125,10 @@ export default function AdminDashboard() {
                     </div>
                     <div className="card-content card-content-primary">
                       {currentLot ? (
-                        <p>
-                          {currentLot.id} - {currentLot.lotName}
-                        </p>
+                        <>
+                          <p>{currentLot.lotName}</p>
+                          <p className="live-detail">ID: {currentLot.id}</p>
+                        </>
                       ) : (
                         <p className="live-lead">Awaiting start</p>
                       )}
@@ -963,9 +1143,10 @@ export default function AdminDashboard() {
                     </div>
                     <div className="card-content card-content-warning">
                       {nextLotPreview ? (
-                        <p>
-                          {nextLotPreview.id} - {nextLotPreview.lotName}
-                        </p>
+                        <>
+                          <p>{nextLotPreview.lotName}</p>
+                          <p className="live-detail">ID: {nextLotPreview.id}</p>
+                        </>
                       ) : (
                         <p>None</p>
                       )}
@@ -1003,9 +1184,17 @@ export default function AdminDashboard() {
                   <button
                     className="control-btn btn-success btn-large"
                     onClick={startAuction}
-                    disabled={isRunning || lots.length === 0}
-                    aria-disabled={isRunning || lots.length === 0}
-                    title={lots.length === 0 ? 'Add lots first' : isRunning ? 'Already running' : 'Start'}
+                    disabled={isRunning || !activeLiveAuctionId || liveLots.length === 0}
+                    aria-disabled={isRunning || !activeLiveAuctionId || liveLots.length === 0}
+                    title={
+                      !activeLiveAuctionId
+                        ? 'Select an auction first'
+                        : liveLots.length === 0
+                          ? 'No lots assigned to this auction'
+                          : isRunning
+                            ? 'Already running'
+                            : 'Start'
+                    }
                   >
                     {isRunning ? 'Running' : 'Start'}
                   </button>
@@ -1021,9 +1210,9 @@ export default function AdminDashboard() {
                   <button
                     className="control-btn btn-info btn-large"
                     onClick={goNextLot}
-                    disabled={lots.length === 0}
-                    aria-disabled={lots.length === 0}
-                    title={lots.length === 0 ? 'Add lots first' : 'Next lot'}
+                    disabled={!activeLiveAuctionId || liveLots.length === 0}
+                    aria-disabled={!activeLiveAuctionId || liveLots.length === 0}
+                    title={!activeLiveAuctionId ? 'Select an auction first' : liveLots.length === 0 ? 'No lots assigned' : 'Next lot'}
                   >
                     Next Lot
                   </button>
@@ -1207,7 +1396,6 @@ export default function AdminDashboard() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>ID</th>
                     <th>Name</th>
                     <th>CNIC</th>
                     <th>PAA</th>
@@ -1219,7 +1407,6 @@ export default function AdminDashboard() {
                 <tbody>
                   {paginated(users, pagination.users).map((u) => (
                     <tr key={u.id}>
-                      <td>{u.id}</td>
                       <td>{u.name}</td>
                       <td>{u.cnic}</td>
                       <td>{u.paa}</td>

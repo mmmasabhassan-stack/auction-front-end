@@ -2,8 +2,13 @@ import { getPool } from '../../../../../lib/db';
 
 export const runtime = 'nodejs';
 
-export async function PUT(req, { params }) 
+async function getParams(ctx) {
+  return await Promise.resolve(ctx?.params);
+}
+
+export async function PUT(req, ctx) 
 {
+  const params = await getParams(ctx);
   const id = Number(params?.id);
   if (!Number.isFinite(id)) 
   {
@@ -13,12 +18,16 @@ export async function PUT(req, { params })
   try 
   {
     const pool = getPool();
-    const { bidAmount } = await req.json();
-    const result = await pool.query('UPDATE bids SET amount=$1 WHERE id=$2 RETURNING *', 
-      [
-      bidAmount,
-      id,
-    ]);
+    const { amount } = await req.json().catch(() => ({}));
+    const bidAmount = Number.parseInt(String(amount ?? '').trim(), 10);
+    if (!Number.isFinite(bidAmount) || bidAmount <= 0) {
+      return Response.json({ error: 'Invalid amount' }, { status: 400 });
+    }
+
+    const result = await pool.query(
+      'UPDATE public.bids SET amount=$1 WHERE bid_id=$2 RETURNING bid_id, auction_id, lot_id, user_id, amount, created_at',
+      [bidAmount, id]
+    );
 
     if (!result.rows[0]) 
       {
@@ -32,8 +41,9 @@ export async function PUT(req, { params })
   }
 }
 
-export async function DELETE(_req, { params }) 
+export async function DELETE(_req, ctx) 
 {
+  const params = await getParams(ctx);
   const id = Number(params?.id);
   if (!Number.isFinite(id)) 
     {
@@ -43,7 +53,7 @@ export async function DELETE(_req, { params })
   try 
   {
     const pool = getPool();
-    await pool.query('DELETE FROM bids WHERE id=$1', [id]);
+    await pool.query('DELETE FROM public.bids WHERE bid_id=$1', [id]);
     return new Response(null, { status: 204 });
   } catch (error) 
   {

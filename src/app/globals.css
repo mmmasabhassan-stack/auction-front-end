@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   --background: #ffffff;
@@ -1489,6 +1491,45 @@ body.dark-mode .timer-display {
   color: var(--text-dark);
 }
 
+.live-control-box .live-detail,
+.live-detail {
+  margin: 6px 0 0 0;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.live-auction-picker {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.live-auction-label {
+  font-weight: 600;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.live-auction-select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-dark);
+}
+
+body.dark-mode .live-auction-select {
+  border-color: #333;
+  color: #e8e8e8;
+  background: #1f1f1f;
+}
+
+.live-auction-detail {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
 /* Keep "live-lead" readable in dark mode too (Admin/Sub-Admin live dashboard text) */
 body.dark-mode .live-control-box .live-lead,
 body.dark-mode .live-lead {
@@ -1745,6 +1786,21 @@ body.dark-mode .live-status-badge.is-paused {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.timer-input-wrapper input[type="number"] {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  color: var(--text-dark);
+}
+
+body.dark-mode .timer-input-wrapper input[type="number"] {
+  background: #1f1f1f;
+  border-color: #333;
+  color: #e8e8e8;
 }
 
 .timer-display {

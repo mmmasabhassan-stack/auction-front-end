@@ -5,6 +5,8 @@ export const runtime = "nodejs";
 const AUCTIONS_TABLE = "public.auctions";
 const AUCTION_LOTS_TABLE = "public.auction_lots";
 const LOTS_TABLE = "public.lots";
+const USERS_TABLE = "public.users";
+const NOTIFS_TABLE = "public.notifications";
 
 function parseIntStrict(value) {
   const n = Number.parseInt(String(value ?? "").trim(), 10);
@@ -100,6 +102,10 @@ export async function POST(req) {
     try {
       await client.query("BEGIN");
 
+      // Detect "new auction" to emit notifications only once.
+      const existedRes = await client.query(`SELECT 1 FROM ${AUCTIONS_TABLE} WHERE auction_id = $1`, [auctionId]);
+      const existed = (existedRes.rows ?? []).length > 0;
+
       const valid = await validateLotIdsExist(client, lotIds);
       if (!valid.ok) {
         await client.query("ROLLBACK");
@@ -149,6 +155,23 @@ export async function POST(req) {
           lotId,
         ]);
         await client.query(`UPDATE ${LOTS_TABLE} SET assigned_auction = $1 WHERE lot_id = $2`, [auctionId, lotId]);
+      }
+
+      // New auction notifications (best-effort; don't fail save if notifications fail)
+      if (!existed) {
+        try {
+          const usersRes = await client.query(`SELECT user_id FROM ${USERS_TABLE}`);
+          const userIds = (usersRes.rows ?? []).map((r) => String(r.user_id ?? "").trim()).filter(Boolean);
+          for (const uid of userIds) {
+            await client.query(
+              `INSERT INTO ${NOTIFS_TABLE} (user_id, type, title, message, entity_type, entity_id, is_read)
+               VALUES ($1,'new_auction',$2,$3,'auction',$4,false)`,
+              [uid, `New Auction: ${auctionName}`, `A new auction was created: ${auctionName}`, auctionId]
+            );
+          }
+        } catch {
+          // ignore
+        }
       }
 
       await client.query("COMMIT");

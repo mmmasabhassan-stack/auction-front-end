@@ -11,12 +11,14 @@ function parseIntStrict(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function parseAuctionId(params) {
-  return String(params?.id ?? '').trim();
+async function getParams(ctx) {
+  // Next may provide `params` as a Promise in newer versions.
+  return await Promise.resolve(ctx?.params);
 }
 
-export async function PUT(req, { params }) {
-  const auctionId = parseAuctionId(params);
+export async function PUT(req, ctx) {
+  const params = await getParams(ctx);
+  const auctionId = String(params?.id ?? '').trim();
   if (!auctionId) return Response.json({ error: 'Invalid auction id' }, { status: 400 });
 
   try {
@@ -100,8 +102,9 @@ export async function PUT(req, { params }) {
   }
 }
 
-export async function DELETE(_req, { params }) {
-  const auctionId = parseAuctionId(params);
+export async function DELETE(_req, ctx) {
+  const params = await getParams(ctx);
+  const auctionId = String(params?.id ?? '').trim();
   if (!auctionId) return Response.json({ error: 'Invalid auction id' }, { status: 400 });
 
   try {
